@@ -24,6 +24,7 @@
 	"type": "module",
 	"dependencies": {
 		"konva": "^9.3.14",
+		"svelte-boxicons": "^1.0.4",
 		"svelte-konva": "^0.3.1"
 	}
 }
