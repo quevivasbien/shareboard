@@ -1,9 +1,23 @@
-import { linesIntersect, pointWithinBox } from "./geometry";
+import { BoundingBox, linesIntersect } from "./geometry";
+import Line from "./components/Line.svelte";
+import TextBox from "./components/TextBox.svelte";
 
-export class CanvasElementData {
-    constructor(
-        public selected: boolean,
-    ) {} 
+export abstract class CanvasElementData {
+    constructor() {}
+    
+    // Determine whether the line AB intersects this element
+    // Input takes the form [Ax, Ay, Bx, By]
+    intersects(line: [number, number, number, number]) {
+        return false;
+    }
+
+    abstract boundingBox(): BoundingBox;
+
+    // Get the element's Svelte component type
+    abstract componentType(): any;
+
+    // Move the element in-place and return it
+    abstract move(dx: number, dy: number): CanvasElementData;
 }
 
 export class LineData extends CanvasElementData {
@@ -11,9 +25,8 @@ export class LineData extends CanvasElementData {
         public points: number[],
         public color: string,
         public width: number,
-        selected: boolean = false
     ) {
-        super(selected);
+        super();
     }
 
     intersects(line: [number, number, number, number]) {
@@ -29,23 +42,12 @@ export class LineData extends CanvasElementData {
         return false;
     }
 
-    containedBy(selection: SelectionData) {
-        for (let i = 0; i < this.points.length - 2; i += 2) {
-            const cx = this.points[i];
-            const cy = this.points[i + 1];
-            if (!selection.contains([cx, cy])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     boundingBox() {
         let minX = Infinity;
         let minY = Infinity;
         let maxX = -Infinity;
         let maxY = -Infinity;
-        for (let i = 0; i < this.points.length - 2; i += 2) {
+        for (let i = 0; i < this.points.length; i += 2) {
             const x = this.points[i];
             const y = this.points[i + 1];
             if (x < minX) {
@@ -62,40 +64,54 @@ export class LineData extends CanvasElementData {
             }
         }
 
-        return new SelectionData(minX, minY, maxX - minX, maxY - minY);
+        return new BoundingBox(minX, minY, maxX, maxY);
+    }
+
+    componentType() {
+        return Line;
+    }
+
+    move(dx: number, dy: number) {
+        for (let i = 0; i < this.points.length; i += 2) {
+            this.points[i] += dx;
+            this.points[i + 1] += dy;
+        }
+
+        return this;
     }
 }
 
 export class TextBoxData extends CanvasElementData {
     constructor(
         public text: string,
-        public x: number,
-        public y: number,
-        public width: number,
-        public height: number,
+        public bounds: BoundingBox,
         public color: string,
-        public selected: boolean = false,
     ) {
-        super(selected);
+        super();
+    }
+
+    componentType() {
+        return TextBox;
+    }
+
+    boundingBox(): BoundingBox {
+        return this.bounds;
+    }
+
+    move(dx: number, dy: number) {
+        this.bounds = this.bounds.translate(dx, dy);
+        return this;
     }
 }
 
 export class SelectionData {
     constructor(
-        public x: number,
-        public y: number,
-        public width: number,
-        public height: number
-    ) {
-        
-    }
+        public bounds: BoundingBox,
+        public contents: CanvasElementData[] = [],
+    ) {}
 
-    contains(point: [number, number]) {
-        return pointWithinBox(
-            point[0], point[1],
-            this.x, this.y,
-            this.x + this.width, this.y + this.height
-        );
+    contains(element: CanvasElementData) {
+        return this.bounds.contains(element.boundingBox());
     }
 }
 

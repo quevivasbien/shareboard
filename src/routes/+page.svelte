@@ -1,18 +1,21 @@
 <script lang="ts">
-    import { BxEraser, BxPencil, BxSelection, BxText, BxUndo } from "svelte-boxicons";
+    import { BxUndo } from "svelte-boxicons";
     import * as Konva from "svelte-konva";
 
-    import { CanvasHistory, LineData, SelectionData, TextBoxData } from "$lib/canvasElements";
-    import { linesIntersect } from "$lib/geometry";
-    import Line from "./Line.svelte";
-    import TextBox from "./TextBox.svelte";
-    import Selection from "./Selection.svelte";
+    import { CanvasElementData, CanvasHistory, LineData, SelectionData, TextBoxData } from "$lib/canvasElements";
+    import Line from "$lib/components/Line.svelte";
+    import TextBox from "$lib/components/TextBox.svelte";
+    import Selection from "$lib/components/Selection.svelte";
+    import { BoundingBox } from "$lib/geometry";
+    import SelectedElements from "$lib/components/SelectedElements.svelte";
+    import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
+    import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
 
     const canvasState = {
         cursorPosition: { x: 0, y: 0 },
-        lines: [] as LineData[],
+        elements: [] as CanvasElementData[],
+        selectedElements: [] as CanvasElementData[],
         currentLine: null as LineData | null,
-        textBoxes: [] as TextBoxData[],
         currentTextBox: null as TextBoxData | null,
         currentSelection: null as SelectionData | null,
         backgroundColor: "white",
@@ -23,8 +26,28 @@
     let history = new CanvasHistory();
     let historyEmpty = true;
 
+    // Whether or not mouse button is currently pressed
     let mouseIsDown = false;
+    // The current selected tool
     let activeTool = "pencil";
+    // Whether the mouse is hovering over an active selection
+    let mouseOverSelection = false;
+
+    // When moving a selection, where the mouse was when the move started
+    let selectionMoveOrigin: { x: number; y: number } | null = null;
+
+    let cursorType: string;
+    $: {
+        if (activeTool === "line") {
+            cursorType = "crosshair";
+        }
+        else if (activeTool === "selection") {
+            cursorType = mouseOverSelection ? "grab" : "auto";
+        }
+        else {
+            cursorType = activeTool;
+        }
+    }
 
     let lineColor: string = "black";
     let lineWidth: number = 3;
@@ -38,24 +61,35 @@
         if (!canvasState.currentSelection) {
             return;
         }
-        for (const line of canvasState.lines) {
-            if (line.containedBy(canvasState.currentSelection)) {
-                line.selected = true;
+        const selectedIdxs = [];
+        const unselectedIdxs = [];
+        for (let i = 0; i < canvasState.elements.length; i++) {
+            const element = canvasState.elements[i];
+            if (canvasState.currentSelection.contains(element)) {
+                selectedIdxs.push(i);
+            }
+            else {
+                unselectedIdxs.push(i);
             }
         }
-        for (const textBox of canvasState.textBoxes) {
-            // TODO!
-        }
+        canvasState.selectedElements = selectedIdxs.map((i) => canvasState.elements[i]);
+        canvasState.elements = unselectedIdxs.map((i) => canvasState.elements[i]);
         canvasState.currentSelection = null;
     }
 
     function clearSelections() {
-        for (const line of canvasState.lines) {
-            line.selected = false;
-        }
-        for (const textBox of canvasState.textBoxes) {
-            // TODO!
-        }
+        canvasState.elements = canvasState.elements.concat(canvasState.selectedElements);
+        canvasState.selectedElements = [];
+    }
+
+    function moveSelections(origin: { x: number; y: number }) {
+        const dx = canvasState.cursorPosition.x - origin.x;
+        const dy = canvasState.cursorPosition.y - origin.y;
+        canvasState.selectedElements = canvasState.selectedElements.map((e) => e.move(dx, dy));
+    }
+
+    function deleteSelections() {
+        canvasState.selectedElements = [];
     }
 
     function handleMousedown(e: Konva.KonvaMouseEvent) {
@@ -64,13 +98,17 @@
         mouseIsDown = true;
         // Deactivate current text box if one is active
         if (canvasState.currentTextBox) {
-            canvasState.textBoxes = [
-                ...canvasState.textBoxes,
+            canvasState.elements = [
+                ...canvasState.elements,
                 canvasState.currentTextBox,
             ];
             history.add("draw", canvasState.currentTextBox);
             historyEmpty = false;
             canvasState.currentTextBox = null;
+        }
+        // Remove current selection if one is active and not being moved
+        if (canvasState.selectedElements.length !== 0 && !mouseOverSelection) {
+            clearSelections();
         }
         if (activeTool === "pencil") {
             canvasState.currentLine = new LineData(
@@ -89,20 +127,18 @@
         } else if (activeTool === "text") {
             canvasState.currentTextBox = new TextBoxData(
                 "",
-                pos.x,
-                pos.y,
-                0,
-                0,
+                new BoundingBox(pos.x, pos.y, pos.x, pos.y),
                 lineColor,
             );
         } else if (activeTool === "selection") {
-            clearSelections();
-            canvasState.currentSelection = new SelectionData(
-                pos.x,
-                pos.y,
-                0,
-                0,
-            );
+            if (mouseOverSelection) {
+                selectionMoveOrigin = pos;
+            }
+            else {
+                canvasState.currentSelection = new SelectionData(
+                    new BoundingBox(pos.x, pos.y, pos.x, pos.y),
+                );
+            }
         }
     }
 
@@ -156,10 +192,10 @@
             const ay = eraseStartPos.y;
             const bx = pos.x;
             const by = pos.y;
-            // Look for lines that intersect line AB
-            canvasState.lines = canvasState.lines.filter((line) => {
-                if (line.intersects([ax, ay, bx, by])) {
-                    history.add("erase", line);
+            // Look for elements that intersect line AB
+            canvasState.elements = canvasState.elements.filter((element) => {
+                if (element.intersects([ax, ay, bx, by])) {
+                    history.add("erase", element);
                     historyEmpty = false;
                     return false;
                 }
@@ -169,16 +205,13 @@
             if (!canvasState.currentTextBox) {
                 return;
             }
-            canvasState.currentTextBox.width =
-                pos.x - canvasState.currentTextBox.x;
-            canvasState.currentTextBox.height =
-                pos.y - canvasState.currentTextBox.y;
+            canvasState.currentTextBox.bounds.x1 = pos.x;
+            canvasState.currentTextBox.bounds.y1 = pos.y;
         } else if (activeTool === "selection") {
-            if (!canvasState.currentSelection) {
-                return;
+            if (canvasState.currentSelection) {
+                canvasState.currentSelection.bounds.x1 = pos.x;
+                canvasState.currentSelection.bounds.y1 = pos.y;
             }
-            canvasState.currentSelection.width = pos.x - canvasState.currentSelection.x;
-            canvasState.currentSelection.height = pos.y - canvasState.currentSelection.y;
         }
     }
 
@@ -188,13 +221,17 @@
             if (!canvasState.currentLine) {
                 return;
             }
-            canvasState.lines = [...canvasState.lines, canvasState.currentLine];
+            canvasState.elements = [...canvasState.elements, canvasState.currentLine];
             history.add("draw", canvasState.currentLine);
             historyEmpty = false;
             canvasState.currentLine = null;
         } else if (activeTool === "eraser") {
             eraseStartPos = null;
         } else if (activeTool === "selection") {
+            if (selectionMoveOrigin) {
+                moveSelections(selectionMoveOrigin);
+                selectionMoveOrigin = null;
+            }
             makeSelections();
         };
     }
@@ -203,25 +240,17 @@
         const lastAction = history.actions.pop();
         if (lastAction) {
             if (lastAction.type === "draw") {
-                canvasState.lines = canvasState.lines.filter(
-                    (line) => line !== lastAction.element,
+                canvasState.elements = canvasState.elements.filter(
+                    (element) => element !== lastAction.element,
                 );
             } else if (
-                lastAction.type === "erase" &&
-                lastAction.element instanceof LineData
+                lastAction.type === "erase"
             ) {
-                canvasState.lines = [...canvasState.lines, lastAction.element];
+                canvasState.elements = [...canvasState.elements, lastAction.element];
             }
         }
         historyEmpty = history.actions.length === 0;
     }
-
-    // Capture Ctrl+Z
-    window.addEventListener("keydown", (event) => {
-        if (event.ctrlKey && event.key === "z") {
-            undo();
-        }
-    });
 
     // Capture key presses for active text box
     window.addEventListener("keydown", (event) => {
@@ -240,151 +269,32 @@
                 canvasState.currentTextBox.text += event.key;
             }
         }
+
+        // Capture Ctrl+Z
+        else if (event.ctrlKey && event.key === "z") {
+            undo();
+        }
+        // Capture delete selection
+        else if (canvasState.selectedElements.length !== 0 && event.key === "Delete") {
+            deleteSelections();
+        }
     });
 </script>
 
 <div class="flex flex-row gap-8 p-2 items-center border-b drop-shadow">
-    <div class="flex flex-row gap-2 items-center">
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={activeTool}
-                value="pencil"
-            />
-            <BxPencil class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
-            <!-- This is just so the cursor is loaded -->
-            <span class="hidden cursor-pencil"></span>
-        </label>
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={activeTool}
-                value="eraser"
-            />
-            <BxEraser class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
-            <!-- This is just so the cursor is loaded -->
-            <span class="hidden cursor-eraser"></span>
-        </label>
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={activeTool}
-                value="line"
-            />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
-                <svg viewBox="0 0 24 24">
-                    <line
-                        x1="0"
-                        y1="24"
-                        x2="24"
-                        y2="0"
-                        stroke="black"
-                        stroke-width="3"
-                    />
-                </svg>
-            </div>
-            <!-- This is just so the cursor is loaded -->
-            <span class="hidden cursor-line"></span>
-        </label>
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={activeTool}
-                value="text"
-            />
-            <BxText class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
-            <!-- This is just so the cursor is loaded -->
-            <span class="hidden cursor-text"></span>
-        </label>
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={activeTool}
-                value="selection"
-            />
-            <BxSelection class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
-            <!-- This is just so the cursor is loaded -->
-            <span class="hidden cursor-selection"></span>
-        </label>
-    </div>
+    <ToolSelectMenu bind:activeTool />
     <label class="flex flex-row gap-2 items-center">
         <!-- <span>Color:</span> -->
         <input type="color" class="cursor-pointer" bind:value={lineColor} />
     </label>
-    <div class="flex flex-row gap-2 items-center">
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={lineWidth}
-                value={2}
-            />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
-                <svg viewBox="0 0 24 24">
-                    <line
-                        x1="0"
-                        y1="24"
-                        x2="24"
-                        y2="0"
-                        stroke="black"
-                        stroke-width="2"
-                    />
-                </svg>
-            </div>
-        </label>
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={lineWidth}
-                value={3}
-            />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
-                <svg viewBox="0 0 24 24">
-                    <line
-                        x1="0"
-                        y1="24"
-                        x2="24"
-                        y2="0"
-                        stroke="black"
-                        stroke-width="4"
-                    />
-                </svg>
-            </div>
-        </label>
-        <label class="cursor-pointer">
-            <input
-                type="radio"
-                class="peer hidden"
-                bind:group={lineWidth}
-                value={4}
-            />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
-                <svg viewBox="0 0 24 24">
-                    <line
-                        x1="0"
-                        y1="24"
-                        x2="24"
-                        y2="0"
-                        stroke="black"
-                        stroke-width="6"
-                    />
-                </svg>
-            </div>
-        </label>
-    </div>
+    <PencilOptionsMenu bind:lineWidth />
     <button class={historyEmpty ? "text-gray-400" : ""} on:click={undo}
         ><BxUndo /></button
     >
 </div>
 <div class="flex flex-col h-screen bg-gray-100">
     <Konva.Stage
-        class="overflow-scroll cursor-{activeTool}"
+        class="overflow-scroll cursor-{cursorType}"
         config={{ width: boardSize.width, height: boardSize.height }}
         on:mousedown={handleMousedown}
         on:mousemove={handleMousemove}
@@ -400,21 +310,29 @@
             ></Konva.Rect>
         </Konva.Layer>
         <Konva.Layer>
-            {#each canvasState.lines as line}
-                <Line {line} />
+            {#each canvasState.elements as element}
+                <svelte:component this={element.componentType()} data={element} />
             {/each}
             {#if canvasState.currentLine}
-                <Line line={canvasState.currentLine} />
+                <Line data={canvasState.currentLine} />
             {/if}
-            {#each canvasState.textBoxes as textBox}
-                <TextBox {textBox} />
-            {/each}
             {#if canvasState.currentTextBox}
-                <TextBox textBox={canvasState.currentTextBox} active={true} />
+                <TextBox data={canvasState.currentTextBox} active={true} />
             {/if}
             {#if canvasState.currentSelection}
-                <Selection selection={canvasState.currentSelection} />
+                <Selection data={canvasState.currentSelection} />
+            {/if}
+            {#if canvasState.selectedElements.length !== 0}
+                <SelectedElements elements={canvasState.selectedElements} bind:mouseOverSelection={mouseOverSelection} moveOrigin={selectionMoveOrigin} mousePosition={canvasState.cursorPosition} />
             {/if}
         </Konva.Layer>
     </Konva.Stage>
 </div>
+
+<!-- Just so other cursor types can be used -->
+<div class="hidden cursor-pencil"></div>
+<div class="hidden cursor-eraser"></div>
+<div class="hidden cursor-crosshair"></div>
+<div class="hidden cursor-text"></div>
+<div class="hidden cursor-selection"></div>
+<div class="hidden cursor-grab"></div>
