@@ -19,3 +19,14 @@ export function linesIntersect(
         && clockwise(ax, ay, bx, by, cx, cy) !== clockwise(ax, ay, bx, by, dx, dy)
     );
 }
+
+export function pointWithinBox(
+    x: number,
+    y: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number
+) {
+    return x >= x1 && x <= x2 && y >= y1 && y <= y2;
+}

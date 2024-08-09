@@ -1,20 +1,20 @@
 <script lang="ts">
-    import { BxEraser, BxPencil, BxUndo } from "svelte-boxicons";
-    import {
-        Stage,
-        Layer,
-        Line,
-        Rect,
-        type KonvaMouseEvent,
-    } from "svelte-konva";
+    import { BxEraser, BxPencil, BxSelection, BxText, BxUndo } from "svelte-boxicons";
+    import * as Konva from "svelte-konva";
 
-    import { CanvasHistory, type FreeformLine } from "$lib/canvasElements";
+    import { CanvasHistory, LineData, SelectionData, TextBoxData } from "$lib/canvasElements";
     import { linesIntersect } from "$lib/geometry";
+    import Line from "./Line.svelte";
+    import TextBox from "./TextBox.svelte";
+    import Selection from "./Selection.svelte";
 
     const canvasState = {
         cursorPosition: { x: 0, y: 0 },
-        lines: [] as FreeformLine[],
-        currentLine: null as FreeformLine | null,
+        lines: [] as LineData[],
+        currentLine: null as LineData | null,
+        textBoxes: [] as TextBoxData[],
+        currentTextBox: null as TextBoxData | null,
+        currentSelection: null as SelectionData | null,
         backgroundColor: "white",
     };
 
@@ -23,6 +23,7 @@
     let history = new CanvasHistory();
     let historyEmpty = true;
 
+    let mouseIsDown = false;
     let activeTool = "pencil";
 
     let lineColor: string = "black";
@@ -33,30 +34,85 @@
         height: 1600,
     };
 
-    function handleMousedown(e: KonvaMouseEvent) {
-        const event = e.detail;
-        const pos = event.target.getStage().getPointerPosition();
-        if (activeTool === "pencil") {
-            canvasState.currentLine = {
-                points: [pos.x, pos.y],
-                color: lineColor,
-                width: lineWidth,
-            };
-        } else if (activeTool === "line") {
-            canvasState.currentLine = {
-                points: [pos.x, pos.y, pos.x, pos.y],
-                color: lineColor,
-                width: lineWidth,
-            };
-        } else if (activeTool === "eraser") {
-            eraseStartPos = pos;
+    function makeSelections() {
+        if (!canvasState.currentSelection) {
+            return;
+        }
+        for (const line of canvasState.lines) {
+            if (line.containedBy(canvasState.currentSelection)) {
+                line.selected = true;
+            }
+        }
+        for (const textBox of canvasState.textBoxes) {
+            // TODO!
+        }
+        canvasState.currentSelection = null;
+    }
+
+    function clearSelections() {
+        for (const line of canvasState.lines) {
+            line.selected = false;
+        }
+        for (const textBox of canvasState.textBoxes) {
+            // TODO!
         }
     }
 
-    function handleMousemove(e: KonvaMouseEvent) {
+    function handleMousedown(e: Konva.KonvaMouseEvent) {
+        const event = e.detail;
+        const pos = event.target.getStage().getPointerPosition();
+        mouseIsDown = true;
+        // Deactivate current text box if one is active
+        if (canvasState.currentTextBox) {
+            canvasState.textBoxes = [
+                ...canvasState.textBoxes,
+                canvasState.currentTextBox,
+            ];
+            history.add("draw", canvasState.currentTextBox);
+            historyEmpty = false;
+            canvasState.currentTextBox = null;
+        }
+        if (activeTool === "pencil") {
+            canvasState.currentLine = new LineData(
+                [pos.x, pos.y],
+                lineColor,
+                lineWidth,
+            );
+        } else if (activeTool === "line") {
+            canvasState.currentLine = new LineData(
+                [pos.x, pos.y, pos.x, pos.y],
+                lineColor,
+                lineWidth,
+            );
+        } else if (activeTool === "eraser") {
+            eraseStartPos = pos;
+        } else if (activeTool === "text") {
+            canvasState.currentTextBox = new TextBoxData(
+                "",
+                pos.x,
+                pos.y,
+                0,
+                0,
+                lineColor,
+            );
+        } else if (activeTool === "selection") {
+            clearSelections();
+            canvasState.currentSelection = new SelectionData(
+                pos.x,
+                pos.y,
+                0,
+                0,
+            );
+        }
+    }
+
+    function handleMousemove(e: Konva.KonvaMouseEvent) {
         const event = e.detail;
         const pos = event.target.getStage().getPointerPosition();
         canvasState.cursorPosition = pos;
+        if (!mouseIsDown) {
+            return;
+        }
         if (activeTool === "pencil") {
             if (!canvasState.currentLine) {
                 return;
@@ -102,23 +158,32 @@
             const by = pos.y;
             // Look for lines that intersect line AB
             canvasState.lines = canvasState.lines.filter((line) => {
-                for (let j = 0; j < line.points.length - 2; j += 2) {
-                    const cx = line.points[j];
-                    const cy = line.points[j + 1];
-                    const dx = line.points[j + 2];
-                    const dy = line.points[j + 3];
-                    if (linesIntersect(ax, ay, bx, by, cx, cy, dx, dy)) {
-                        history.add("erase", line);
-                        historyEmpty = false;
-                        return false;
-                    }
+                if (line.intersects([ax, ay, bx, by])) {
+                    history.add("erase", line);
+                    historyEmpty = false;
+                    return false;
                 }
                 return true;
             });
+        } else if (activeTool === "text") {
+            if (!canvasState.currentTextBox) {
+                return;
+            }
+            canvasState.currentTextBox.width =
+                pos.x - canvasState.currentTextBox.x;
+            canvasState.currentTextBox.height =
+                pos.y - canvasState.currentTextBox.y;
+        } else if (activeTool === "selection") {
+            if (!canvasState.currentSelection) {
+                return;
+            }
+            canvasState.currentSelection.width = pos.x - canvasState.currentSelection.x;
+            canvasState.currentSelection.height = pos.y - canvasState.currentSelection.y;
         }
     }
 
-    function handleMouseup(e: KonvaMouseEvent) {
+    function handleMouseup(e: Konva.KonvaMouseEvent) {
+        mouseIsDown = false;
         if (activeTool === "pencil" || activeTool === "line") {
             if (!canvasState.currentLine) {
                 return;
@@ -129,7 +194,9 @@
             canvasState.currentLine = null;
         } else if (activeTool === "eraser") {
             eraseStartPos = null;
-        }
+        } else if (activeTool === "selection") {
+            makeSelections();
+        };
     }
 
     function undo() {
@@ -137,10 +204,13 @@
         if (lastAction) {
             if (lastAction.type === "draw") {
                 canvasState.lines = canvasState.lines.filter(
-                    (line) => line !== lastAction.object,
+                    (line) => line !== lastAction.element,
                 );
-            } else if (lastAction.type === "erase") {
-                canvasState.lines = [...canvasState.lines, lastAction.object];
+            } else if (
+                lastAction.type === "erase" &&
+                lastAction.element instanceof LineData
+            ) {
+                canvasState.lines = [...canvasState.lines, lastAction.element];
             }
         }
         historyEmpty = history.actions.length === 0;
@@ -150,6 +220,25 @@
     window.addEventListener("keydown", (event) => {
         if (event.ctrlKey && event.key === "z") {
             undo();
+        }
+    });
+
+    // Capture key presses for active text box
+    window.addEventListener("keydown", (event) => {
+        if (canvasState.currentTextBox) {
+            event.preventDefault();
+            if (event.key === "Enter") {
+                canvasState.currentTextBox.text += "\n";
+            } else if (event.key === "Backspace") {
+                canvasState.currentTextBox.text =
+                    canvasState.currentTextBox.text.slice(0, -1);
+            } else if (event.key === "Escape") {
+                canvasState.currentTextBox = null;
+            }
+            // If key is a printable character, add it to the text
+            else if (event.key.length === 1) {
+                canvasState.currentTextBox.text += event.key;
+            }
         }
     });
 </script>
@@ -199,6 +288,28 @@
             </div>
             <!-- This is just so the cursor is loaded -->
             <span class="hidden cursor-line"></span>
+        </label>
+        <label class="cursor-pointer">
+            <input
+                type="radio"
+                class="peer hidden"
+                bind:group={activeTool}
+                value="text"
+            />
+            <BxText class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
+            <!-- This is just so the cursor is loaded -->
+            <span class="hidden cursor-text"></span>
+        </label>
+        <label class="cursor-pointer">
+            <input
+                type="radio"
+                class="peer hidden"
+                bind:group={activeTool}
+                value="selection"
+            />
+            <BxSelection class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
+            <!-- This is just so the cursor is loaded -->
+            <span class="hidden cursor-selection"></span>
         </label>
     </div>
     <label class="flex flex-row gap-2 items-center">
@@ -272,45 +383,38 @@
     >
 </div>
 <div class="flex flex-col h-screen bg-gray-100">
-    <Stage
+    <Konva.Stage
         class="overflow-scroll cursor-{activeTool}"
         config={{ width: boardSize.width, height: boardSize.height }}
         on:mousedown={handleMousedown}
         on:mousemove={handleMousemove}
         on:mouseup={handleMouseup}
     >
-        <Layer>
-            <Rect
+        <Konva.Layer>
+            <Konva.Rect
                 config={{
                     width: boardSize.width,
                     height: boardSize.height,
                     fill: canvasState.backgroundColor,
                 }}
-            ></Rect>
-        </Layer>
-        <Layer>
+            ></Konva.Rect>
+        </Konva.Layer>
+        <Konva.Layer>
             {#each canvasState.lines as line}
-                <Line
-                    config={{
-                        points: line.points,
-                        stroke: line.color,
-                        strokeWidth: line.width,
-                        lineCap: "round",
-                        lineJoin: "round",
-                    }}
-                />
+                <Line {line} />
             {/each}
             {#if canvasState.currentLine}
-                <Line
-                    config={{
-                        points: canvasState.currentLine.points,
-                        stroke: canvasState.currentLine.color,
-                        strokeWidth: canvasState.currentLine.width,
-                        lineCap: "round",
-                        lineJoin: "round",
-                    }}
-                />
+                <Line line={canvasState.currentLine} />
             {/if}
-        </Layer>
-    </Stage>
+            {#each canvasState.textBoxes as textBox}
+                <TextBox {textBox} />
+            {/each}
+            {#if canvasState.currentTextBox}
+                <TextBox textBox={canvasState.currentTextBox} active={true} />
+            {/if}
+            {#if canvasState.currentSelection}
+                <Selection selection={canvasState.currentSelection} />
+            {/if}
+        </Konva.Layer>
+    </Konva.Stage>
 </div>
