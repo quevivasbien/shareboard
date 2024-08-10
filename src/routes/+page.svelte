@@ -2,22 +2,26 @@
     import { BxUndo } from "svelte-boxicons";
     import * as Konva from "svelte-konva";
 
-    import { CanvasElementData, CanvasHistory, LineData, SelectionData, TextBoxData } from "$lib/canvasElements";
-    import Line from "$lib/components/Line.svelte";
-    import TextBox from "$lib/components/TextBox.svelte";
-    import Selection from "$lib/components/Selection.svelte";
+    import {
+        CanvasElementData,
+        CanvasHistory,
+        LineData,
+        SelectionData,
+        TextBoxData,
+        type CanvasState,
+    } from "$lib/canvasElements";
     import { BoundingBox } from "$lib/geometry";
-    import SelectedElements from "$lib/components/SelectedElements.svelte";
     import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
     import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
+    import Canvas from "$lib/components/Canvas.svelte";
 
-    const canvasState = {
+    const canvasState: CanvasState = {
         cursorPosition: { x: 0, y: 0 },
-        elements: [] as CanvasElementData[],
-        selectedElements: [] as CanvasElementData[],
-        currentLine: null as LineData | null,
-        currentTextBox: null as TextBoxData | null,
-        currentSelection: null as SelectionData | null,
+        elements: [],
+        selectedElements: [],
+        currentLine: null,
+        currentTextBox: null,
+        currentSelection: null,
         backgroundColor: "white",
     };
 
@@ -40,22 +44,15 @@
     $: {
         if (activeTool === "line") {
             cursorType = "crosshair";
-        }
-        else if (activeTool === "selection") {
+        } else if (activeTool === "selection") {
             cursorType = mouseOverSelection ? "grab" : "auto";
-        }
-        else {
+        } else {
             cursorType = activeTool;
         }
     }
 
     let lineColor: string = "black";
     let lineWidth: number = 3;
-
-    const boardSize = {
-        width: 1600,
-        height: 1600,
-    };
 
     function makeSelections() {
         if (!canvasState.currentSelection) {
@@ -67,25 +64,41 @@
             const element = canvasState.elements[i];
             if (canvasState.currentSelection.contains(element)) {
                 selectedIdxs.push(i);
-            }
-            else {
+            } else {
                 unselectedIdxs.push(i);
             }
         }
-        canvasState.selectedElements = selectedIdxs.map((i) => canvasState.elements[i]);
-        canvasState.elements = unselectedIdxs.map((i) => canvasState.elements[i]);
+        canvasState.selectedElements = selectedIdxs.map(
+            (i) => canvasState.elements[i],
+        );
+        canvasState.elements = unselectedIdxs.map(
+            (i) => canvasState.elements[i],
+        );
         canvasState.currentSelection = null;
     }
 
     function clearSelections() {
-        canvasState.elements = canvasState.elements.concat(canvasState.selectedElements);
+        canvasState.elements = canvasState.elements.concat(
+            canvasState.selectedElements,
+        );
         canvasState.selectedElements = [];
     }
 
     function moveSelections(origin: { x: number; y: number }) {
         const dx = canvasState.cursorPosition.x - origin.x;
         const dy = canvasState.cursorPosition.y - origin.y;
-        canvasState.selectedElements = canvasState.selectedElements.map((e) => e.move(dx, dy));
+        canvasState.selectedElements = canvasState.selectedElements.map((e) => {
+            return e.move(dx, dy);
+        });
+        history.add(
+            "move",
+            {
+                elements: canvasState.selectedElements,
+                dx,
+                dy,
+            }
+        );
+        historyEmpty = false;
     }
 
     function deleteSelections() {
@@ -94,7 +107,10 @@
 
     function handleMousedown(e: Konva.KonvaMouseEvent) {
         const event = e.detail;
-        const pos = event.target.getStage().getPointerPosition();
+        const pos = event.target.getStage()?.getPointerPosition();
+        if (!pos) {
+            return;
+        }
         mouseIsDown = true;
         // Deactivate current text box if one is active
         if (canvasState.currentTextBox) {
@@ -133,8 +149,7 @@
         } else if (activeTool === "selection") {
             if (mouseOverSelection) {
                 selectionMoveOrigin = pos;
-            }
-            else {
+            } else {
                 canvasState.currentSelection = new SelectionData(
                     new BoundingBox(pos.x, pos.y, pos.x, pos.y),
                 );
@@ -144,7 +159,10 @@
 
     function handleMousemove(e: Konva.KonvaMouseEvent) {
         const event = e.detail;
-        const pos = event.target.getStage().getPointerPosition();
+        const pos = event.target.getStage()?.getPointerPosition();
+        if (!pos) {
+            return;
+        }
         canvasState.cursorPosition = pos;
         if (!mouseIsDown) {
             return;
@@ -221,7 +239,10 @@
             if (!canvasState.currentLine) {
                 return;
             }
-            canvasState.elements = [...canvasState.elements, canvasState.currentLine];
+            canvasState.elements = [
+                ...canvasState.elements,
+                canvasState.currentLine,
+            ];
             history.add("draw", canvasState.currentLine);
             historyEmpty = false;
             canvasState.currentLine = null;
@@ -233,7 +254,7 @@
                 selectionMoveOrigin = null;
             }
             makeSelections();
-        };
+        }
     }
 
     function undo() {
@@ -241,12 +262,22 @@
         if (lastAction) {
             if (lastAction.type === "draw") {
                 canvasState.elements = canvasState.elements.filter(
-                    (element) => element !== lastAction.element,
+                    (element) => element !== lastAction.payload,
                 );
-            } else if (
-                lastAction.type === "erase"
-            ) {
-                canvasState.elements = [...canvasState.elements, lastAction.element];
+            } else if (lastAction.type === "erase") {
+                canvasState.elements = [
+                    ...canvasState.elements,
+                    lastAction.payload as CanvasElementData,
+                ];
+            } else if (lastAction.type === "move") {
+                const { elements, dx, dy } = lastAction.payload;
+                canvasState.elements = canvasState.elements.map((e) => {
+                    if (elements.includes(e)) {
+                        return e.move(-dx, -dy);
+                    } else {
+                        return e;
+                    }
+                });
             }
         }
         historyEmpty = history.actions.length === 0;
@@ -275,7 +306,10 @@
             undo();
         }
         // Capture delete selection
-        else if (canvasState.selectedElements.length !== 0 && event.key === "Delete") {
+        else if (
+            canvasState.selectedElements.length !== 0 &&
+            event.key === "Delete"
+        ) {
             deleteSelections();
         }
     });
@@ -293,41 +327,20 @@
     >
 </div>
 <div class="flex flex-col h-screen bg-gray-100">
-    <Konva.Stage
-        class="overflow-scroll cursor-{cursorType}"
-        config={{ width: boardSize.width, height: boardSize.height }}
-        on:mousedown={handleMousedown}
-        on:mousemove={handleMousemove}
-        on:mouseup={handleMouseup}
-    >
-        <Konva.Layer>
-            <Konva.Rect
-                config={{
-                    width: boardSize.width,
-                    height: boardSize.height,
-                    fill: canvasState.backgroundColor,
-                }}
-            ></Konva.Rect>
-        </Konva.Layer>
-        <Konva.Layer>
-            {#each canvasState.elements as element}
-                <svelte:component this={element.componentType()} data={element} />
-            {/each}
-            {#if canvasState.currentLine}
-                <Line data={canvasState.currentLine} />
-            {/if}
-            {#if canvasState.currentTextBox}
-                <TextBox data={canvasState.currentTextBox} active={true} />
-            {/if}
-            {#if canvasState.currentSelection}
-                <Selection data={canvasState.currentSelection} />
-            {/if}
-            {#if canvasState.selectedElements.length !== 0}
-                <SelectedElements elements={canvasState.selectedElements} bind:mouseOverSelection={mouseOverSelection} moveOrigin={selectionMoveOrigin} mousePosition={canvasState.cursorPosition} />
-            {/if}
-        </Konva.Layer>
-    </Konva.Stage>
+    <div class="overflow-scroll relative">
+        <Canvas
+            {canvasState}
+            {cursorType}
+            {handleMousedown}
+            {handleMousemove}
+            {handleMouseup}
+            
+            bind:mouseOverSelection
+            {selectionMoveOrigin}
+        />
+    </div>
 </div>
+
 
 <!-- Just so other cursor types can be used -->
 <div class="hidden cursor-pencil"></div>

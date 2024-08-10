@@ -2,6 +2,16 @@ import { BoundingBox, linesIntersect } from "./geometry";
 import Line from "./components/Line.svelte";
 import TextBox from "./components/TextBox.svelte";
 
+export interface CanvasState {
+    cursorPosition: { x: number; y: number };
+    elements: CanvasElementData[];
+    selectedElements: CanvasElementData[];
+    currentLine: LineData | null;
+    currentTextBox: TextBoxData | null;
+    currentSelection: SelectionData | null;
+    backgroundColor: string;
+} 
+
 export abstract class CanvasElementData {
     constructor() {}
     
@@ -115,19 +125,20 @@ export class SelectionData {
     }
 }
 
+
 type actionType = "draw" | "erase" | "move";
 
 export interface CanvasAction {
     type: actionType;
-    element: CanvasElementData;
+    payload: any;
 }
 
 export class CanvasHistory {
     memorySize = 30;
     actions: CanvasAction[] = [];
 
-    add(type: actionType, element: CanvasElementData) {
-        this.actions.push({ type, element });
+    add(type: actionType, payload: any) {
+        this.actions.push({ type, payload });
         if (this.actions.length > this.memorySize) {
             this.actions.shift();
         }
