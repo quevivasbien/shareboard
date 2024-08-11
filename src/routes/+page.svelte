@@ -10,7 +10,7 @@
         TextBoxData,
         type CanvasState,
     } from "$lib/canvasElements";
-    import { BoundingBox } from "$lib/geometry";
+    import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
     import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
     import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
     import Canvas from "$lib/components/Canvas.svelte";
@@ -34,22 +34,13 @@
     let mouseIsDown = false;
     // The current selected tool
     let activeTool = "pencil";
-    // Whether the mouse is hovering over an active selection
-    let mouseOverSelection = false;
+    // Whether the mouse is hovering over an active selection, and where it is within the selection
+    let mouseOverSelection: string | null = null;
+    // The current mode for an active selection
+    let selectionMode: string | null = null;
 
     // When moving a selection, where the mouse was when the move started
     let selectionMoveOrigin: { x: number; y: number } | null = null;
-
-    let cursorType: string;
-    $: {
-        if (activeTool === "line") {
-            cursorType = "crosshair";
-        } else if (activeTool === "selection") {
-            cursorType = mouseOverSelection ? "grab" : "auto";
-        } else {
-            cursorType = activeTool;
-        }
-    }
 
     let lineColor: string = "black";
     let lineWidth: number = 3;
@@ -96,6 +87,28 @@
                 elements: canvasState.selectedElements,
                 dx,
                 dy,
+            }
+        );
+        historyEmpty = false;
+    }
+
+    function resizeSelections() {
+        const mode = selectionMode?.split(":");
+        if (mode?.length !== 2) {
+            return;
+        }
+        const [horizSource, vertSource] = mode[1].split("-");
+        const boundsBefore = BoundingBox.union(canvasState.selectedElements.map((e) => e.boundingBox()));
+        const boundsAfter = getBoundsAfterResize(boundsBefore, canvasState.cursorPosition, horizSource, vertSource);
+        canvasState.selectedElements = canvasState.selectedElements.map((e) => {
+            return e.scale(boundsBefore, boundsAfter);
+        });
+        history.add(
+            "resize",
+            {
+                elements: canvasState.selectedElements,
+                boundsBefore,
+                boundsAfter,
             }
         );
         historyEmpty = false;
@@ -250,7 +263,12 @@
             eraseStartPos = null;
         } else if (activeTool === "selection") {
             if (selectionMoveOrigin) {
-                moveSelections(selectionMoveOrigin);
+                if (selectionMode === "move") {
+                    moveSelections(selectionMoveOrigin);
+                }
+                else {
+                    resizeSelections();
+                }
                 selectionMoveOrigin = null;
             }
             makeSelections();
@@ -274,6 +292,15 @@
                 canvasState.elements = canvasState.elements.map((e) => {
                     if (elements.includes(e)) {
                         return e.move(-dx, -dy);
+                    } else {
+                        return e;
+                    }
+                });
+            } else if (lastAction.type === "resize") {
+                const { elements, boundsBefore, boundsAfter } = lastAction.payload;
+                canvasState.elements = canvasState.elements.map((e) => {
+                    if (elements.includes(e)) {
+                        return e.scale(boundsAfter, boundsBefore);
                     } else {
                         return e;
                     }
@@ -330,12 +357,14 @@
     <div class="overflow-scroll relative">
         <Canvas
             {canvasState}
-            {cursorType}
+            {activeTool}
             {handleMousedown}
             {handleMousemove}
             {handleMouseup}
             
+            {mouseIsDown}
             bind:mouseOverSelection
+            bind:selectionMode
             {selectionMoveOrigin}
         />
     </div>
@@ -349,3 +378,7 @@
 <div class="hidden cursor-text"></div>
 <div class="hidden cursor-selection"></div>
 <div class="hidden cursor-grab"></div>
+<div class="hidden cursor-nwse-resize"></div>
+<div class="hidden cursor-nesw-resize"></div>
+<div class="hidden cursor-ew-resize"></div>
+<div class="hidden cursor-ns-resize"></div>

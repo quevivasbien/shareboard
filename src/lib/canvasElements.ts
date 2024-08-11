@@ -1,4 +1,4 @@
-import { BoundingBox, linesIntersect } from "./geometry";
+import { BoundingBox, linesIntersect, scalePoint } from "./geometry";
 import Line from "./components/Line.svelte";
 import TextBox from "./components/TextBox.svelte";
 
@@ -28,6 +28,10 @@ export abstract class CanvasElementData {
 
     // Move the element in-place and return it
     abstract move(dx: number, dy: number): CanvasElementData;
+
+    // Scale the element in-place and return it
+    // boundsBefore and boundsAfter are the bounding boxes for an encompassing selection
+    abstract scale(boundsBefore: BoundingBox, boundsAfter: BoundingBox): CanvasElementData;
 }
 
 export class LineData extends CanvasElementData {
@@ -86,7 +90,15 @@ export class LineData extends CanvasElementData {
             this.points[i] += dx;
             this.points[i + 1] += dy;
         }
+        return this;
+    }
 
+    scale(boundsBefore: BoundingBox, boundsAfter: BoundingBox) {
+        for (let i = 0; i < this.points.length; i += 2) {
+            const { x, y } = scalePoint({ x: this.points[i], y: this.points[i + 1] }, boundsBefore, boundsAfter);
+            this.points[i] = x;
+            this.points[i + 1] = y;
+        }
         return this;
     }
 }
@@ -109,7 +121,12 @@ export class TextBoxData extends CanvasElementData {
     }
 
     move(dx: number, dy: number) {
-        this.bounds = this.bounds.translate(dx, dy);
+        this.bounds = this.bounds.move(dx, dy);
+        return this;
+    }
+
+    scale(boundsBefore: BoundingBox, boundsAfter: BoundingBox) {
+        this.bounds = this.bounds.scale(boundsBefore, boundsAfter);
         return this;
     }
 }
@@ -126,7 +143,7 @@ export class SelectionData {
 }
 
 
-type actionType = "draw" | "erase" | "move";
+type actionType = "draw" | "erase" | "move" | "resize";
 
 export interface CanvasAction {
     type: actionType;

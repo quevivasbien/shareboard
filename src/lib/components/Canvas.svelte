@@ -8,19 +8,72 @@
     import Selection from "./Selection.svelte";
 
     export let canvasState: CanvasState;
-    export let cursorType: string;
+    export let activeTool: string;
+    export let selectionMode: string | null;
 
     export let handleMousedown: (e: Konva.KonvaMouseEvent) => void;
     export let handleMousemove: (e: Konva.KonvaMouseEvent) => void;
     export let handleMouseup: (e: Konva.KonvaMouseEvent) => void;
 
-    export let mouseOverSelection: boolean;
+    export let mouseIsDown: boolean;
+    export let mouseOverSelection: string | null;
     export let selectionMoveOrigin: { x: number; y: number } | null;
 
     const BOARD_SIZE = {
         width: 1600,
         height: 1600,
     };
+
+    let cursorType: string;
+    $: {
+        if (activeTool === "line") {
+            cursorType = "crosshair";
+        } else if (activeTool === "selection") {
+            cursorType = "auto";
+        } else {
+            cursorType = activeTool;
+        }
+    }
+
+    function setSelectionMode(mouseOverSelection: string | null) {
+        if (mouseIsDown) {
+            return;
+        }
+        if (activeTool !== "selection") {
+            selectionMode = null;
+        } else if (!mouseOverSelection) {
+            selectionMode = "select";
+            cursorType = "auto";
+        } else if (mouseOverSelection === "center-center") {
+            selectionMode = "move";
+            cursorType = "grab";
+        } else {
+            selectionMode = `resize:${mouseOverSelection}`;
+            if (
+                mouseOverSelection === "left-top" ||
+                mouseOverSelection === "right-bottom"
+            ) {
+                cursorType = "nwse-resize";
+            } else if (
+                mouseOverSelection === "left-bottom" ||
+                mouseOverSelection === "right-top"
+            ) {
+                cursorType = "nesw-resize";
+            } else if (
+                mouseOverSelection === "left-center" ||
+                mouseOverSelection === "right-center"
+            ) {
+                cursorType = "ew-resize";
+            } else if (
+                mouseOverSelection === "center-top" ||
+                mouseOverSelection === "center-bottom"
+            ) {
+                cursorType = "ns-resize";
+            }
+        }
+    }
+
+    $: setSelectionMode(mouseOverSelection);
 </script>
 
 <Konva.Stage
@@ -56,6 +109,7 @@
             <SelectedElements
                 elements={canvasState.selectedElements}
                 bind:mouseOverSelection
+                {selectionMode}
                 moveOrigin={selectionMoveOrigin}
                 mousePosition={canvasState.cursorPosition}
             />
