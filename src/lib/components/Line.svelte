@@ -12,5 +12,6 @@
         strokeWidth: data.width,
         lineCap: "round",
         lineJoin: "round",
+        dash: data.style === "dash" ? [5, 5] : undefined,
     }}
 />

@@ -6,6 +6,7 @@ export interface ToolState {
     activeTool: string;
     size: number;
     color: string;
+    style: "solid" | "dash";
 }
 
 type actionType = "draw" | "erase" | "move" | "resize";
@@ -141,6 +142,10 @@ export class CanvasState {
     }
 
     deleteSelections() {
+        this.history.add(
+            "erase",
+            this.selectedElements,
+        )
         this.selectedElements = [];
     }
 
@@ -170,6 +175,7 @@ export class CanvasState {
                     [pos.x, pos.y],
                     toolState.color,
                     toolState.size,
+                    toolState.style,
                 );
                 break;
             
@@ -178,6 +184,7 @@ export class CanvasState {
                     [pos.x, pos.y, pos.x, pos.y],
                     toolState.color,
                     toolState.size,
+                    toolState.style,
                 );
                 break;
             
@@ -270,7 +277,7 @@ export class CanvasState {
                 // Look for elements that intersect line AB
                 this.elements = this.elements.filter((element) => {
                     if (element.intersects([ax, ay, bx, by])) {
-                        this.history.add("erase", element);
+                        this.history.add("erase", [element]);
                         return false;
                     }
                     return true;
@@ -336,7 +343,7 @@ export class CanvasState {
             } else if (lastAction.type === "erase") {
                 this.elements = [
                     ...this.elements,
-                    lastAction.payload as CanvasElementData,
+                    ...(lastAction.payload as CanvasElementData[]),
                 ];
             } else if (lastAction.type === "move") {
                 const { elements, dx, dy } = lastAction.payload;

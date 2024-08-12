@@ -29,6 +29,7 @@ export class LineData extends CanvasElementData {
         public points: number[],
         public color: string,
         public width: number,
+        public style: "solid" | "dash",
     ) {
         super();
     }

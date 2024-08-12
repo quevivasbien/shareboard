@@ -4,11 +4,13 @@
     import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
     import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
     import Canvas from "$lib/components/Canvas.svelte";
+    import type { ToolState } from "$lib/canvasState";
 
-    let toolState = {
+    let toolState: ToolState = {
         activeTool: "pencil",
         color: "black",
         size: 3,
+        style: "solid",
     };
 
     let undo: () => void;
@@ -21,7 +23,9 @@
         <!-- <span>Color:</span> -->
         <input type="color" class="cursor-pointer" bind:value={toolState.color} />
     </label>
-    <PencilOptionsMenu bind:lineWidth={toolState.size} />
+    {#if toolState.activeTool === "pencil" || toolState.activeTool === "line"}
+        <PencilOptionsMenu bind:lineWidth={toolState.size} bind:lineStyle={toolState.style} />
+    {/if}
     <button class={historyEmpty ? "text-gray-400" : ""} on:click={undo}
         ><BxUndo /></button
     >

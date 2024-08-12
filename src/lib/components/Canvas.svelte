@@ -19,7 +19,7 @@
     };
 
     let canvasState = new CanvasState();
-    undo = canvasState.undo;
+    undo = () => { canvasState.undo() };
     $: historyEmpty = canvasState.history.empty;
 
     let cursorType: string;
