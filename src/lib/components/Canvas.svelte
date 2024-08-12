@@ -1,54 +1,52 @@
 <script lang="ts">
     import * as Konva from "svelte-konva";
 
-    import type { CanvasState } from "$lib/canvasElements";
+    import { CanvasState, type ToolState } from "$lib/canvasState";
     import Line from "./Line.svelte";
     import TextBox from "./TextBox.svelte";
     import SelectedElements from "./SelectedElements.svelte";
     import Selection from "./Selection.svelte";
 
-    export let canvasState: CanvasState;
-    export let activeTool: string;
-    export let selectionMode: string | null;
+    export let toolState: ToolState;
 
-    export let handleMousedown: (e: Konva.KonvaMouseEvent) => void;
-    export let handleMousemove: (e: Konva.KonvaMouseEvent) => void;
-    export let handleMouseup: (e: Konva.KonvaMouseEvent) => void;
-
-    export let mouseIsDown: boolean;
-    export let mouseOverSelection: string | null;
-    export let selectionMoveOrigin: { x: number; y: number } | null;
+    // Bound values
+    export let undo: () => void;
+    export let historyEmpty: boolean;
 
     const BOARD_SIZE = {
         width: 1600,
         height: 1600,
     };
 
+    let canvasState = new CanvasState();
+    undo = canvasState.undo;
+    $: historyEmpty = canvasState.history.empty;
+
     let cursorType: string;
     $: {
-        if (activeTool === "line") {
+        if (toolState.activeTool === "line") {
             cursorType = "crosshair";
-        } else if (activeTool === "selection") {
+        } else if (toolState.activeTool === "selection") {
             cursorType = "auto";
         } else {
-            cursorType = activeTool;
+            cursorType = toolState.activeTool;
         }
     }
 
     function setSelectionMode(mouseOverSelection: string | null) {
-        if (mouseIsDown) {
+        if (canvasState.mouseIsDown) {
             return;
         }
-        if (activeTool !== "selection") {
-            selectionMode = null;
+        if (toolState.activeTool !== "selection") {
+            canvasState.selectionMode = null;
         } else if (!mouseOverSelection) {
-            selectionMode = "select";
+            canvasState.selectionMode = "select";
             cursorType = "auto";
         } else if (mouseOverSelection === "center-center") {
-            selectionMode = "move";
+            canvasState.selectionMode = "move";
             cursorType = "grab";
         } else {
-            selectionMode = `resize:${mouseOverSelection}`;
+            canvasState.selectionMode = `resize:${mouseOverSelection}`;
             if (
                 mouseOverSelection === "left-top" ||
                 mouseOverSelection === "right-bottom"
@@ -73,7 +71,27 @@
         }
     }
 
-    $: setSelectionMode(mouseOverSelection);
+    $: setSelectionMode(canvasState.mouseOverSelection);
+
+    function handleMousedown(e: Konva.KonvaMouseEvent) {
+        canvasState.handleMousedown(e, toolState);
+        canvasState = canvasState;
+    }
+
+    function handleMousemove(e: Konva.KonvaMouseEvent) {
+        canvasState.handleMousemove(e, toolState);
+        canvasState = canvasState;
+    }
+
+    function handleMouseup(e: Konva.KonvaMouseEvent) {
+        canvasState.handleMouseup(e, toolState);
+        canvasState = canvasState;
+    }
+
+    addEventListener("keydown", (e) => {
+        canvasState.handleKeydown(e);
+        canvasState = canvasState;
+    });
 </script>
 
 <Konva.Stage
@@ -108,10 +126,10 @@
         {#if canvasState.selectedElements.length !== 0}
             <SelectedElements
                 elements={canvasState.selectedElements}
-                bind:mouseOverSelection
-                {selectionMode}
-                moveOrigin={selectionMoveOrigin}
-                mousePosition={canvasState.cursorPosition}
+                bind:mouseOverSelection={canvasState.mouseOverSelection}
+                selectionMode={canvasState.selectionMode}
+                mousePosition={canvasState.mousePosition}
+                moveOrigin={canvasState.lastMousePos}
             />
         {/if}
     </Konva.Layer>
