@@ -1,5 +1,6 @@
 <script lang="ts">
     import * as Konva from "svelte-konva";
+    import { type Stage } from "konva/lib/Stage";
 
     import { CanvasState, type ToolState } from "$lib/canvasState";
     import Line from "./Line.svelte";
@@ -12,6 +13,9 @@
     // Bound values
     export let undo: () => void;
     export let historyEmpty: boolean;
+    export let save: () => void;
+
+    let stage: Stage;
 
     const BOARD_SIZE = {
         width: 1600,
@@ -21,6 +25,16 @@
     let canvasState = new CanvasState();
     undo = () => { canvasState.undo() };
     $: historyEmpty = canvasState.history.empty;
+
+    save = () => {
+        // Save current canvas as an image
+        const dataURL = stage.toDataURL();
+        const a = document.createElement("a");
+        a.href = dataURL;
+        a.download = "shareboard.png";
+        a.click();
+        a.remove();
+    }
 
     let cursorType: string;
     $: {
@@ -95,6 +109,7 @@
 </script>
 
 <Konva.Stage
+    bind:handle={stage}
     class="cursor-{cursorType}"
     config={{ width: BOARD_SIZE.width, height: BOARD_SIZE.height }}
     on:mousedown={handleMousedown}
