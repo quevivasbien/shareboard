@@ -2,13 +2,12 @@
     import * as Konva from "svelte-konva";
     import { type Stage } from "konva/lib/Stage";
 
-    import { CanvasState, type ToolState } from "$lib/canvasState";
+    import { textBoxInputStore, toolStateStore } from "$lib/stores";
+    import { CanvasState } from "$lib/canvasState";
     import Line from "./Line.svelte";
     import TextBox from "./TextBox.svelte";
     import SelectedElements from "./SelectedElements.svelte";
     import Selection from "./Selection.svelte";
-
-    export let toolState: ToolState;
 
     // Bound values
     export let undo: () => void;
@@ -38,12 +37,12 @@
 
     let cursorType: string;
     $: {
-        if (toolState.activeTool === "line") {
+        if ($toolStateStore.activeTool === "line") {
             cursorType = "crosshair";
-        } else if (toolState.activeTool === "selection") {
+        } else if ($toolStateStore.activeTool === "selection") {
             cursorType = "auto";
         } else {
-            cursorType = toolState.activeTool;
+            cursorType = $toolStateStore.activeTool;
         }
     }
 
@@ -51,7 +50,7 @@
         if (canvasState.mouseIsDown) {
             return;
         }
-        if (toolState.activeTool !== "selection") {
+        if ($toolStateStore.activeTool !== "selection") {
             canvasState.selectionMode = null;
         } else if (!mouseOverSelection) {
             canvasState.selectionMode = "select";
@@ -88,18 +87,22 @@
     $: setSelectionMode(canvasState.mouseOverSelection);
 
     function handleMousedown(e: Konva.KonvaMouseEvent) {
-        canvasState.handleMousedown(e, toolState);
+        canvasState.handleMousedown(e);
         canvasState = canvasState;
     }
 
     function handleMousemove(e: Konva.KonvaMouseEvent) {
-        canvasState.handleMousemove(e, toolState);
+        canvasState.handleMousemove(e);
         canvasState = canvasState;
     }
 
     function handleMouseup(e: Konva.KonvaMouseEvent) {
-        canvasState.handleMouseup(e, toolState);
+        canvasState.handleMouseup(e);
         canvasState = canvasState;
+    }
+
+    $: if ($textBoxInputStore) {
+        $textBoxInputStore.style.display = canvasState.currentTextBox ? "block" : "none";
     }
 
     addEventListener("keydown", (e) => {

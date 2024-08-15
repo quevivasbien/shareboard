@@ -1,13 +1,8 @@
 import * as Konva from "svelte-konva";
 import { LineData, SelectionData, TextBoxData, type CanvasElementData } from "$lib/canvasElements";
 import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
-
-export interface ToolState {
-    activeTool: string;
-    size: number;
-    color: string;
-    style: "solid" | "dash";
-}
+import { textBoxInputStore, toolStateStore, type ToolState } from "./stores";
+import { get } from "svelte/store";
 
 type actionType = "draw" | "erase" | "move" | "resize";
 
@@ -15,6 +10,9 @@ interface CanvasAction {
     type: actionType;
     payload: any;
 }
+
+const MIN_TEXTBOX_WIDTH_FACTOR = 8;
+const MIN_TEXTBOX_HEIGHT_FACTOR = 6;
 
 class CanvasHistory {
     memorySize = 30;
@@ -67,6 +65,27 @@ export class CanvasState {
     history: CanvasHistory = new CanvasHistory();
 
     contructor() {}
+
+    removeCurrentTextBox(addToElements: boolean) {
+        if (!this.currentTextBox) {
+            return;
+        }
+        if (addToElements) {
+            this.currentTextBox.text = get(textBoxInputStore)?.value || "";
+            this.elements = [
+                ...this.elements,
+                this.currentTextBox,
+            ];
+            this.history.add("draw", this.currentTextBox);
+        }
+        textBoxInputStore.update((t) => {
+            if (t) {
+                t.value = "";
+            }
+            return t;
+        });
+        this.currentTextBox = null;
+    }
 
     makeSelections() {
         if (!this.currentSelection) {
@@ -149,7 +168,7 @@ export class CanvasState {
         this.selectedElements = [];
     }
 
-    handleMousedown(e: Konva.KonvaMouseEvent, toolState: ToolState) {
+    handleMousedown(e: Konva.KonvaMouseEvent) {
         const event = e.detail;
         const pos = event.target.getStage()?.getPointerPosition();
         if (!pos) {
@@ -158,17 +177,14 @@ export class CanvasState {
         this.mouseIsDown = true;
         // Deactivate current text box if one is active
         if (this.currentTextBox) {
-            this.elements = [
-                ...this.elements,
-                this.currentTextBox,
-            ];
-            this.history.add("draw", this.currentTextBox);
-            this.currentTextBox = null;
+            this.removeCurrentTextBox(true);
         }
         // Remove current selection if one is active and not being moved
         if (this.selectedElements.length !== 0 && !this.mouseOverSelection) {
             this.clearSelections();
         }
+
+        const toolState = get(toolStateStore);
         switch (toolState.activeTool) {
             case "pencil":
                 this.currentLine = new LineData(
@@ -197,6 +213,7 @@ export class CanvasState {
                     "",
                     new BoundingBox(pos.x, pos.y, pos.x, pos.y),
                     toolState.color,
+                    toolState.fontSize,
                 );
                 break;
 
@@ -215,7 +232,7 @@ export class CanvasState {
         }
     }
 
-    handleMousemove(e: Konva.KonvaMouseEvent, toolState: ToolState) {
+    handleMousemove(e: Konva.KonvaMouseEvent) {
         const event = e.detail;
         const pos = event.target.getStage()?.getPointerPosition();
         if (!pos) {
@@ -226,7 +243,7 @@ export class CanvasState {
             return;
         }
 
-        switch (toolState.activeTool) {
+        switch (get(toolStateStore).activeTool) {
             case "pencil":
                 if (!this.currentLine) {
                     return;
@@ -304,8 +321,9 @@ export class CanvasState {
         }
     }
 
-    handleMouseup(e: Konva.KonvaMouseEvent, toolState: ToolState) {
+    handleMouseup(e: Konva.KonvaMouseEvent) {
         this.mouseIsDown = false;
+        const toolState = get(toolStateStore);
         if (toolState.activeTool === "pencil" || toolState.activeTool === "line") {
             if (!this.currentLine) {
                 return;
@@ -318,6 +336,23 @@ export class CanvasState {
             this.currentLine = null;
         } else if (toolState.activeTool === "eraser") {
             this.lastMousePos = null;
+        } else if (toolState.activeTool === "text") {
+            if (!this.currentTextBox) {
+                return;
+            }
+            const { width, height } = this.currentTextBox.bounds.dimensions();
+            const minWidth = MIN_TEXTBOX_WIDTH_FACTOR * this.currentTextBox.fontSize; 
+            const minHeight = MIN_TEXTBOX_HEIGHT_FACTOR * this.currentTextBox.fontSize;
+            if (width < minWidth || height < minHeight) {
+                this.currentTextBox.bounds.x1 = this.currentTextBox.bounds.x0 + minWidth;
+                this.currentTextBox.bounds.y1 = this.currentTextBox.bounds.y0 + minHeight;
+            }
+            textBoxInputStore.update((t) => {   
+                if (t) {
+                    t.focus();
+                }
+                return t;
+            });
         } else if (toolState.activeTool === "selection") {
             if (this.lastMousePos) {
                 if (this.selectionMode === "move") {
@@ -369,18 +404,9 @@ export class CanvasState {
 
     handleKeydown(event: KeyboardEvent) {
         if (this.currentTextBox) {
-            event.preventDefault();
-            if (event.key === "Enter") {
-                this.currentTextBox.text += "\n";
-            } else if (event.key === "Backspace") {
-                this.currentTextBox.text =
-                    this.currentTextBox.text.slice(0, -1);
-            } else if (event.key === "Escape") {
-                this.currentTextBox = null;
-            }
-            // If key is a printable character, add it to the text
-            else if (event.key.length === 1) {
-                this.currentTextBox.text += event.key;
+            if (event.key === "Escape") {
+                event.preventDefault();
+                this.removeCurrentTextBox(false);
             }
         }
         // Capture Ctrl+Z

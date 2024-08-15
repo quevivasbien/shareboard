@@ -99,6 +99,7 @@ export class TextBoxData extends CanvasElementData {
         public text: string,
         public bounds: BoundingBox,
         public color: string,
+        public fontSize: number,
     ) {
         super();
     }
