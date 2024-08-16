@@ -73,6 +73,7 @@
             width,
             height,
             fontSize,
+            fontFamily: "sans-serif",
             lineHeight: 1,
         }}
     />

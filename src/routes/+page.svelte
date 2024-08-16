@@ -12,7 +12,7 @@
     let save: () => void;
 </script>
 
-<div class="flex flex-row flex-wrap justify-between w-full items-center px-2 border-b">
+<div class="flex flex-row flex-wrap justify-between w-full items-center px-2 border-b bg-white">
     <div class="flex flex-row gap-8 p-2 items-center">
         <ToolSelectMenu bind:activeTool={$toolStateStore.activeTool} />
         <label class="flex flex-row gap-2 items-center">
@@ -40,7 +40,7 @@
             />
         </div>
     </div>
-    <textarea class="absolute outline-none resize-none bg-transparent" style="line-height: 1" bind:this={$textBoxInputStore}></textarea>
+    <textarea class="absolute outline-none resize-none bg-transparent" style="line-height: 1; font-family: sans-serif" bind:this={$textBoxInputStore}></textarea>
 </div>
 
 

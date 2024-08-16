@@ -51,6 +51,10 @@ export class BoundingBox {
         return new BoundingBox(x0, y0, x1, y1);
     }
 
+    containsPoint(point: { x: number; y: number }) {
+        return this.x0 <= point.x && this.x1 >= point.x && this.y0 <= point.y && this.y1 >= point.y
+    }
+
     contains(other: BoundingBox) {
         return(
             Math.min(this.x0, this.x1) <= Math.min(other.x0, other.x1) &&

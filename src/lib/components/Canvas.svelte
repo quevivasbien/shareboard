@@ -7,7 +7,12 @@
     import TextBox from "./TextBox.svelte";
     import SelectedElements from "./SelectedElements.svelte";
     import Selection from "./Selection.svelte";
-    import { LineData, SelectionData, TextBoxData, type CanvasElementData } from "$lib/canvasElements";
+    import {
+        LineData,
+        SelectionData,
+        TextBoxData,
+        type CanvasElementData,
+    } from "$lib/canvasElements";
     import { CanvasHistory } from "$lib/canvasState";
     import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
 
@@ -15,7 +20,7 @@
     export let undo: () => void;
     export let historyEmpty: boolean;
     export let save: () => void;
-    
+
     const BOARD_SIZE = {
         width: 1600,
         height: 1600,
@@ -23,13 +28,13 @@
 
     const MIN_TEXTBOX_WIDTH_FACTOR = 8;
     const MIN_TEXTBOX_HEIGHT_FACTOR = 6;
-    
+
     // Location of the mouse within the canvas
     let mousePosition: { x: number; y: number } = { x: 0, y: 0 };
     // Whether or not mouse button is currently pressed
     let mouseIsDown: boolean = false;
     // Used to track a recent mouse position for making changes with e.g. the eraser or a selection
-    let lastMousePos: { x: number, y: number } | null = null;
+    let lastMousePos: { x: number; y: number } | null = null;
     // The element that the mouse is currently hovering over
     let mouseOverElement: CanvasElementData | null = null;
     // Elements currently displayed on the canvas
@@ -40,6 +45,8 @@
     let currentLine: LineData | null = null;
     // A text box that is currently being edited
     let currentTextBox: TextBoxData | null = null;
+    // Whether to allow the currently edited text box to be resized
+    let allowResizeTextBox: boolean = false;
     // A selection that is actively being created (being dragged out)
     let currentSelection: SelectionData | null = null;
     // Whether the mouse is currently hovering over a selection
@@ -59,12 +66,9 @@
         if (!currentTextBox) {
             return;
         }
-        if (addToElements) {
-            currentTextBox.text = $textBoxInputStore?.value || "";
-            elements = [
-                ...elements,
-                currentTextBox,
-            ];
+        if (addToElements && $textBoxInputStore?.value) {
+            currentTextBox.text = $textBoxInputStore.value;
+            elements = [...elements, currentTextBox];
             history.add("draw", currentTextBox);
             history = history;
         }
@@ -91,74 +95,86 @@
                 unselectedIdxs.push(i);
             }
         }
-        selectedElements = selectedIdxs.map(
-            (i) => elements[i],
-        );
-        elements = unselectedIdxs.map(
-            (i) => elements[i],
-        );
+        selectedElements = selectedIdxs.map((i) => elements[i]);
+        elements = unselectedIdxs.map((i) => elements[i]);
         currentSelection = null;
     }
 
     function clearSelections() {
-        elements = elements.concat(
-            selectedElements,
-        );
+        elements = elements.concat(selectedElements);
         selectedElements = [];
     }
 
     function moveSelections() {
         if (!lastMousePos) {
-            throw new Error("Tried to move selection without active selection origin.");
+            throw new Error(
+                "Tried to move selection without active selection origin.",
+            );
         }
         const dx = mousePosition.x - lastMousePos.x;
         const dy = mousePosition.y - lastMousePos.y;
         selectedElements = selectedElements.map((e) => {
             return e.move(dx, dy);
         });
-        history.add(
-            "move",
-            {
-                elements: selectedElements,
-                dx,
-                dy,
-            }
-        );
+        history.add("move", {
+            elements: selectedElements,
+            dx,
+            dy,
+        });
         history = history;
     }
 
     function resizeSelections() {
         if (!selectionMode) {
-            throw new Error("Tried to resize selection without active selection mode");
+            throw new Error(
+                "Tried to resize selection without active selection mode",
+            );
         }
         const mode = selectionMode.split(":");
         if (mode.length !== 2) {
             return;
         }
         const [horizSource, vertSource] = mode[1].split("-");
-        const boundsBefore = BoundingBox.union(selectedElements.map((e) => e.boundingBox()));
-        const boundsAfter = getBoundsAfterResize(boundsBefore, mousePosition, horizSource, vertSource);
+        const boundsBefore = BoundingBox.union(
+            selectedElements.map((e) => e.boundingBox()),
+        );
+        const boundsAfter = getBoundsAfterResize(
+            boundsBefore,
+            mousePosition,
+            horizSource,
+            vertSource,
+        );
         selectedElements = selectedElements.map((e) => {
             return e.scale(boundsBefore, boundsAfter);
         });
-        history.add(
-            "resize",
-            {
-                elements: selectedElements,
-                boundsBefore,
-                boundsAfter,
-            }
-        );
+        history.add("resize", {
+            elements: selectedElements,
+            boundsBefore,
+            boundsAfter,
+        });
         history = history;
     }
 
     function deleteSelections() {
-        history.add(
-            "erase",
-            selectedElements,
-        )
+        history.add("erase", selectedElements);
         selectedElements = [];
         history = history;
+    }
+
+    function resetToolState(setNoHover: boolean = false) {
+        // Remove current selection if one is active and not being moved
+        if (selectedElements.length !== 0 && !mouseOverSelection) {
+            clearSelections();
+        }
+        // Deactivate current text box if one is active 
+        removeCurrentTextBox(true);
+
+        if (setNoHover) {
+            elements = elements.map((e) => {
+                e.mouseIsOver = false;  
+                return e;
+            });
+        }
     }
 
     function handleMousedown(e: Konva.KonvaMouseEvent) {
@@ -168,14 +184,7 @@
             return;
         }
         mouseIsDown = true;
-        // Deactivate current text box if one is active
-        if (currentTextBox) {
-            removeCurrentTextBox(true);
-        }
-        // Remove current selection if one is active and not being moved
-        if (selectedElements.length !== 0 && !mouseOverSelection) {
-            clearSelections();
-        }
+        resetToolState();
 
         const toolState = $toolStateStore;
         switch (toolState.activeTool) {
@@ -202,12 +211,33 @@
                 break;
 
             case "text":
-                currentTextBox = new TextBoxData(
-                    "",
-                    new BoundingBox(pos.x, pos.y, pos.x, pos.y),
-                    toolState.color,
-                    toolState.fontSize,
-                );
+                // First check if the mouse is hovering over a pre-existing text box
+                let idx = -1;
+                for (let i = 0; i < elements.length; i++) {
+                    if (elements[i].mouseIsOver && elements[i] instanceof TextBoxData) {
+                        idx = i;
+                        break;
+                    }
+                }
+                if (idx !== -1) {
+                    // If so, select that text box
+                    if ($textBoxInputStore !== null) {
+                        $textBoxInputStore.value = (elements[idx] as TextBoxData).text;
+                    }
+                    currentTextBox = elements[idx] as TextBoxData;
+                    elements = elements.slice(0, idx).concat(elements.slice(idx + 1));
+                    allowResizeTextBox = false;
+                }
+                else {
+                    // Otherwise, create a new text box
+                    currentTextBox = new TextBoxData(
+                        "",
+                        new BoundingBox(pos.x, pos.y, pos.x, pos.y),
+                        toolState.color,
+                        toolState.fontSize,
+                    );
+                    allowResizeTextBox = true;
+                }
                 break;
 
             case "selection":
@@ -215,13 +245,25 @@
                     lastMousePos = pos;
                 } else {
                     currentSelection = new SelectionData(
-                        new BoundingBox(pos.x, pos.y, pos.x, pos.y)
+                        new BoundingBox(pos.x, pos.y, pos.x, pos.y),
                     );
                 }
                 break;
 
             default:
                 break;
+        }
+    }
+
+    function setMouseHoverStates() {
+        let madeChange = false;
+        for (const element of elements) {
+            const mouseIsOver = element.boundingBox().containsPoint({x: mousePosition.x, y: mousePosition.y});
+            madeChange ||= mouseIsOver !== element.mouseIsOver;
+            element.mouseIsOver = mouseIsOver;
+        }
+        if (madeChange) {
+            elements = elements;
         }
     }
 
@@ -232,20 +274,22 @@
             return;
         }
         mousePosition = pos;
+        
+        const activeTool = $toolStateStore.activeTool;
+        if (activeTool === "text" || activeTool === "selection") {
+            setMouseHoverStates();
+        }
+        
         if (!mouseIsDown) {
             return;
         }
 
-        switch ($toolStateStore.activeTool) {
+        switch (activeTool) {
             case "pencil":
                 if (!currentLine) {
                     return;
                 }
-                currentLine.points = [
-                    ...currentLine.points,
-                    pos.x,
-                    pos.y,
-                ];
+                currentLine.points = [...currentLine.points, pos.x, pos.y];
                 break;
 
             case "line":
@@ -258,19 +302,9 @@
                 const slope = (startY - pos.y) / (startX - pos.x);
                 const slopeTol = 40;
                 if (Math.abs(slope) < 1 / slopeTol) {
-                    currentLine.points = [
-                        startX,
-                        startY,
-                        pos.x,
-                        startY,
-                    ];
+                    currentLine.points = [startX, startY, pos.x, startY];
                 } else if (Math.abs(slope) > slopeTol) {
-                    currentLine.points = [
-                        startX,
-                        startY,
-                        startX,
-                        pos.y,
-                    ];
+                    currentLine.points = [startX, startY, startX, pos.y];
                 } else {
                     currentLine.points = [startX, startY, pos.x, pos.y];
                 }
@@ -296,7 +330,7 @@
                 break;
 
             case "text":
-                if (!currentTextBox) {
+                if (!currentTextBox || !allowResizeTextBox) {
                     return;
                 }
                 currentTextBox.bounds.x1 = pos.x;
@@ -318,14 +352,14 @@
     function handleMouseup(e: Konva.KonvaMouseEvent) {
         mouseIsDown = false;
         const toolState = $toolStateStore;
-        if (toolState.activeTool === "pencil" || toolState.activeTool === "line") {
+        if (
+            toolState.activeTool === "pencil" ||
+            toolState.activeTool === "line"
+        ) {
             if (!currentLine) {
                 return;
             }
-            elements = [
-                ...elements,
-                currentLine,
-            ];
+            elements = [...elements, currentLine];
             history.add("draw", currentLine);
             history = history;
             currentLine = null;
@@ -335,25 +369,22 @@
             if (!currentTextBox) {
                 return;
             }
-            const { width, height } = currentTextBox.bounds.dimensions();
-            const minWidth = MIN_TEXTBOX_WIDTH_FACTOR * currentTextBox.fontSize;
-            const minHeight = MIN_TEXTBOX_HEIGHT_FACTOR * currentTextBox.fontSize;
-            if (width < minWidth || height < minHeight) {
-                currentTextBox.bounds.x1 = currentTextBox.bounds.x0 + minWidth;
-                currentTextBox.bounds.y1 = currentTextBox.bounds.y0 + minHeight;
-            }
-            textBoxInputStore.update((t) => {
-                if (t) {
-                    t.focus();
+            if (allowResizeTextBox) {
+                const { width, height } = currentTextBox.bounds.dimensions();
+                const minWidth = MIN_TEXTBOX_WIDTH_FACTOR * currentTextBox.fontSize;
+                const minHeight =
+                    MIN_TEXTBOX_HEIGHT_FACTOR * currentTextBox.fontSize;
+                if (width < minWidth || height < minHeight) {
+                    currentTextBox.bounds.x1 = currentTextBox.bounds.x0 + minWidth;
+                    currentTextBox.bounds.y1 = currentTextBox.bounds.y0 + minHeight;
                 }
-                return t;
-            });
+            }
+            $textBoxInputStore?.focus();
         } else if (toolState.activeTool === "selection") {
             if (lastMousePos) {
                 if (selectionMode === "move") {
                     moveSelections();
-                }
-                else {
+                } else {
                     resizeSelections();
                 }
                 lastMousePos = null;
@@ -362,34 +393,21 @@
         }
     }
 
-    function mouseEnterCallback(element: CanvasElementData) {
-        mouseOverElement = element;
-        element.mouseIsOver = true;
-    }
-
-    function mouseLeaveCallback(element: CanvasElementData) {
-        if (mouseOverElement === element) {
-            mouseOverElement = null;
-        }
-        element.mouseIsOver = false;
+    $: if ($toolStateStore.activeTool) {
+        resetToolState();
     }
 
     addEventListener("keydown", (e) => {
-        if (currentTextBox) {
-            if (e.key === "Escape") {
-                e.preventDefault();
-                removeCurrentTextBox(false);
-            }
+        if (e.key === "Escape") {
+            e.preventDefault();
+            resetToolState(false);
         }
         // Capture Ctrl+Z
         else if (e.ctrlKey && e.key === "z") {
             undo();
         }
         // Capture delete selection
-        else if (
-            selectedElements.length !== 0 &&
-            e.key === "Delete"
-        ) {
+        else if (selectedElements.length !== 0 && e.key === "Delete") {
             deleteSelections();
         }
     });
@@ -419,7 +437,10 @@
                 const { payload } = lastAction;
                 elements = elements.map((e: CanvasElementData) => {
                     if (payload.elements.includes(e)) {
-                        return e.scale(payload.boundsAfter, payload.boundsBefore);
+                        return e.scale(
+                            payload.boundsAfter,
+                            payload.boundsBefore,
+                        );
                     } else {
                         return e;
                     }
@@ -429,7 +450,7 @@
         history = history;
     };
     $: historyEmpty = history.empty;
-    
+
     let stage: Stage;
     save = () => {
         // Save current canvas as an image
@@ -439,7 +460,7 @@
         a.download = "shareboard.png";
         a.click();
         a.remove();
-    }
+    };
 
     let cursorType: string;
     $: {
@@ -517,16 +538,8 @@
     <Konva.Layer>
         {#each elements as element}
             <svelte:component
-            this={element.componentType()}
-            data={element}
-            on:mouseenter={() => {
-                mouseEnterCallback(element);
-                console.log("mouseenter", element);
-            }}
-            on:mouseleave={() => {
-                mouseLeaveCallback(element);
-                console.log("mouseleave", element);
-            }}
+                this={element.componentType()}
+                data={element}
             />
         {/each}
         {#if currentLine}
@@ -541,9 +554,9 @@
         {#if selectedElements.length !== 0}
             <SelectedElements
                 elements={selectedElements}
-                bind:mouseOverSelection={mouseOverSelection}
-                selectionMode={selectionMode}
-                mousePosition={mousePosition}
+                bind:mouseOverSelection
+                {selectionMode}
+                {mousePosition}
                 moveOrigin={lastMousePos}
             />
         {/if}
