@@ -49,7 +49,7 @@
     $: updateInputStyle(fontSize, color);
 </script>
 
-{#if active}
+{#if active || data.mouseIsOver}
     <Konva.Rect
         config={{
             x: x - PADDING,
@@ -61,7 +61,9 @@
             strokeWidth: 1,
         }}
     />
-{:else}
+{/if}
+
+{#if !active}
     <Konva.Text
         config={{
             x,
@@ -70,7 +72,8 @@
             fill: data.color,
             width,
             height,
-            fontSize: 24,
+            fontSize,
+            lineHeight: 1,
         }}
     />
 {/if}

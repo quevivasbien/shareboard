@@ -13,18 +13,17 @@
     export let undo: () => void;
     export let historyEmpty: boolean;
     export let save: () => void;
-
-    let stage: Stage;
-
+    
     const BOARD_SIZE = {
         width: 1600,
         height: 1600,
     };
-
+    
     let canvasState = new CanvasState();
     undo = () => { canvasState.undo() };
     $: historyEmpty = canvasState.history.empty;
-
+    
+    let stage: Stage;
     save = () => {
         // Save current canvas as an image
         const dataURL = stage.toDataURL();
@@ -130,7 +129,20 @@
     </Konva.Layer>
     <Konva.Layer>
         {#each canvasState.elements as element}
-            <svelte:component this={element.componentType()} data={element} />
+            <svelte:component
+            this={element.componentType()}
+            data={element}
+            on:mouseenter={() => {
+                canvasState.mouseEnterCallback(element);
+                canvasState = canvasState;
+                console.log("mousenter", element);
+            }}
+            on:mouseleave={() => {
+                canvasState.mouseLeaveCallback(element);
+                canvasState = canvasState;
+                console.log("mouseleave", element);
+            }}
+            />
         {/each}
         {#if canvasState.currentLine}
             <Line data={canvasState.currentLine} />

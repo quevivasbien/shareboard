@@ -40,7 +40,7 @@
             />
         </div>
     </div>
-    <textarea class="absolute outline-none resize-none" bind:this={$textBoxInputStore}></textarea>
+    <textarea class="absolute outline-none resize-none bg-transparent" style="line-height: 1" bind:this={$textBoxInputStore}></textarea>
 </div>
 
 

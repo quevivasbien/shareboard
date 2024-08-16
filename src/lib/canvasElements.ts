@@ -3,6 +3,9 @@ import Line from "./components/Line.svelte";
 import TextBox from "./components/TextBox.svelte";
 
 export abstract class CanvasElementData {
+    // Whether the mouse is currently over this element
+    mouseIsOver: boolean = false;
+
     constructor() {}
     
     // Determine whether the line AB intersects this element

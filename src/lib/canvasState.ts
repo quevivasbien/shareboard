@@ -41,6 +41,8 @@ export class CanvasState {
     mouseIsDown: boolean = false;
     // Used to track a recent mouse position for making changes with e.g. the eraser or a selection
     lastMousePos: { x: number, y: number } | null = null;
+    // The element that the mouse is currently hovering over
+    mouseOverElement: CanvasElementData | null = null;
     // Elements currently displayed on the canvas
     elements: CanvasElementData[] = [];
     // Elements displayed on the canvas that are currently selected
@@ -64,7 +66,7 @@ export class CanvasState {
     // Keeps track of recent edits to the canvas
     history: CanvasHistory = new CanvasHistory();
 
-    contructor() {}
+    contructor() { }
 
     removeCurrentTextBox(addToElements: boolean) {
         if (!this.currentTextBox) {
@@ -194,7 +196,7 @@ export class CanvasState {
                     toolState.style,
                 );
                 break;
-            
+
             case "line":
                 this.currentLine = new LineData(
                     [pos.x, pos.y, pos.x, pos.y],
@@ -203,7 +205,7 @@ export class CanvasState {
                     toolState.style,
                 );
                 break;
-            
+
             case "eraser":
                 this.lastMousePos = pos;
                 break;
@@ -308,7 +310,7 @@ export class CanvasState {
                 this.currentTextBox.bounds.x1 = pos.x;
                 this.currentTextBox.bounds.y1 = pos.y;
                 break;
-                
+
             case "selection":
                 if (this.currentSelection) {
                     this.currentSelection.bounds.x1 = pos.x;
@@ -341,13 +343,13 @@ export class CanvasState {
                 return;
             }
             const { width, height } = this.currentTextBox.bounds.dimensions();
-            const minWidth = MIN_TEXTBOX_WIDTH_FACTOR * this.currentTextBox.fontSize; 
+            const minWidth = MIN_TEXTBOX_WIDTH_FACTOR * this.currentTextBox.fontSize;
             const minHeight = MIN_TEXTBOX_HEIGHT_FACTOR * this.currentTextBox.fontSize;
             if (width < minWidth || height < minHeight) {
                 this.currentTextBox.bounds.x1 = this.currentTextBox.bounds.x0 + minWidth;
                 this.currentTextBox.bounds.y1 = this.currentTextBox.bounds.y0 + minHeight;
             }
-            textBoxInputStore.update((t) => {   
+            textBoxInputStore.update((t) => {
                 if (t) {
                     t.focus();
                 }
@@ -420,5 +422,17 @@ export class CanvasState {
         ) {
             this.deleteSelections();
         }
+    }
+
+    mouseEnterCallback(element: CanvasElementData) {
+        this.mouseOverElement = element;
+        element.mouseIsOver = true;
+    }
+
+    mouseLeaveCallback(element: CanvasElementData) {
+        if (this.mouseOverElement === element) {
+            this.mouseOverElement = null;
+        }
+        element.mouseIsOver = false;
     }
 }
