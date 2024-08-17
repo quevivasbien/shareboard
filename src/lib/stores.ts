@@ -6,14 +6,7 @@ export interface ToolState {
     color: string;
     style: "solid" | "dash";
     fontSize: number;
+    fontFace: string;
 }
-
-export const toolStateStore = writable<ToolState>({
-    activeTool: "pencil",
-    size: 3,
-    color: "#000000",
-    style: "solid",
-    fontSize: 24,
-});
 
 export const textBoxInputStore = writable<HTMLTextAreaElement | null>(null);

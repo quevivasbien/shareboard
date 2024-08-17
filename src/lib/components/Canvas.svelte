@@ -2,7 +2,7 @@
     import * as Konva from "svelte-konva";
     import { type Stage } from "konva/lib/Stage";
 
-    import { textBoxInputStore, toolStateStore } from "$lib/stores";
+    import { textBoxInputStore, type ToolState } from "$lib/stores";
     import Line from "./Line.svelte";
     import TextBox from "./TextBox.svelte";
     import SelectedElements from "./SelectedElements.svelte";
@@ -17,9 +17,12 @@
     import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
 
     // Bound values
+    export let toolState: ToolState;
     export let undo: () => void;
     export let historyEmpty: boolean;
     export let save: () => void;
+
+    let lastTool = toolState.activeTool;
 
     const BOARD_SIZE = {
         width: 1600,
@@ -161,7 +164,7 @@
         history = history;
     }
 
-    function resetToolState(setNoHover: boolean = false) {
+    function resetSelections(setNoHover: boolean = false) {
         // Remove current selection if one is active and not being moved
         if (selectedElements.length !== 0 && !mouseOverSelection) {
             clearSelections();
@@ -184,9 +187,8 @@
             return;
         }
         mouseIsDown = true;
-        resetToolState();
+        resetSelections();
 
-        const toolState = $toolStateStore;
         switch (toolState.activeTool) {
             case "pencil":
                 currentLine = new LineData(
@@ -219,14 +221,21 @@
                         break;
                     }
                 }
+                console.log(idx);
                 if (idx !== -1) {
                     // If so, select that text box
+                    const textBox = elements[idx] as TextBoxData;
                     if ($textBoxInputStore !== null) {
-                        $textBoxInputStore.value = (elements[idx] as TextBoxData).text;
+                        $textBoxInputStore.value = textBox.text;
                     }
-                    currentTextBox = elements[idx] as TextBoxData;
+                    toolState.fontFace = textBox.fontFace;
+                    toolState.fontSize = textBox.fontSize;
+                    toolState.color = textBox.color;
+                    textBox.mouseIsOver = false;  // Otherwise, the user won't be able to create new text boxes after selecting this one
+                    currentTextBox = textBox;
                     elements = elements.slice(0, idx).concat(elements.slice(idx + 1));
                     allowResizeTextBox = false;
+                    $textBoxInputStore?.focus();
                 }
                 else {
                     // Otherwise, create a new text box
@@ -235,6 +244,7 @@
                         new BoundingBox(pos.x, pos.y, pos.x, pos.y),
                         toolState.color,
                         toolState.fontSize,
+                        toolState.fontFace,
                     );
                     allowResizeTextBox = true;
                 }
@@ -275,7 +285,7 @@
         }
         mousePosition = pos;
         
-        const activeTool = $toolStateStore.activeTool;
+        const activeTool = toolState.activeTool;
         if (activeTool === "text" || activeTool === "selection") {
             setMouseHoverStates();
         }
@@ -351,7 +361,6 @@
 
     function handleMouseup(e: Konva.KonvaMouseEvent) {
         mouseIsDown = false;
-        const toolState = $toolStateStore;
         if (
             toolState.activeTool === "pencil" ||
             toolState.activeTool === "line"
@@ -370,14 +379,7 @@
                 return;
             }
             if (allowResizeTextBox) {
-                const { width, height } = currentTextBox.bounds.dimensions();
-                const minWidth = MIN_TEXTBOX_WIDTH_FACTOR * currentTextBox.fontSize;
-                const minHeight =
-                    MIN_TEXTBOX_HEIGHT_FACTOR * currentTextBox.fontSize;
-                if (width < minWidth || height < minHeight) {
-                    currentTextBox.bounds.x1 = currentTextBox.bounds.x0 + minWidth;
-                    currentTextBox.bounds.y1 = currentTextBox.bounds.y0 + minHeight;
-                }
+                currentTextBox = currentTextBox.setMinimumSize();
             }
             $textBoxInputStore?.focus();
         } else if (toolState.activeTool === "selection") {
@@ -393,14 +395,15 @@
         }
     }
 
-    $: if ($toolStateStore.activeTool) {
-        resetToolState();
+    $: if (toolState.activeTool !== lastTool) {
+        lastTool = toolState.activeTool;
+        resetSelections(true);
     }
 
     addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
             e.preventDefault();
-            resetToolState(false);
+            resetSelections(false);
         }
         // Capture Ctrl+Z
         else if (e.ctrlKey && e.key === "z") {
@@ -464,12 +467,12 @@
 
     let cursorType: string;
     $: {
-        if ($toolStateStore.activeTool === "line") {
+        if (toolState.activeTool === "line") {
             cursorType = "crosshair";
-        } else if ($toolStateStore.activeTool === "selection") {
+        } else if (toolState.activeTool === "selection") {
             cursorType = "auto";
         } else {
-            cursorType = $toolStateStore.activeTool;
+            cursorType = toolState.activeTool;
         }
     }
 
@@ -477,7 +480,7 @@
         if (mouseIsDown) {
             return;
         }
-        if ($toolStateStore.activeTool !== "selection") {
+        if (toolState.activeTool !== "selection") {
             selectionMode = null;
         } else if (!mouseOverSelection) {
             selectionMode = "select";
@@ -515,6 +518,18 @@
 
     $: if ($textBoxInputStore) {
         $textBoxInputStore.style.display = currentTextBox ? "block" : "none";
+    }
+
+    $: if (toolState.activeTool == "text" && currentTextBox) {
+        currentTextBox.color = toolState.color;
+        currentTextBox.fontFace = toolState.fontFace;
+        currentTextBox.fontSize = toolState.fontSize;
+        if ($textBoxInputStore) {
+            $textBoxInputStore.style.color = currentTextBox.color;
+            $textBoxInputStore.style.fontFamily = currentTextBox.fontFace;
+            $textBoxInputStore.style.fontSize = currentTextBox.fontSize + "px";
+            $textBoxInputStore.focus();
+        }
     }
 </script>
 

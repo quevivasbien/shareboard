@@ -98,11 +98,15 @@ export class LineData extends CanvasElementData {
 }
 
 export class TextBoxData extends CanvasElementData {
+    static MIN_WIDTH_FACTOR = 12;
+    static MIN_HEIGHT_FACTOR = 8;
+
     constructor(
         public text: string,
         public bounds: BoundingBox,
         public color: string,
         public fontSize: number,
+        public fontFace: string,
     ) {
         super();
     }
@@ -122,6 +126,20 @@ export class TextBoxData extends CanvasElementData {
 
     scale(boundsBefore: BoundingBox, boundsAfter: BoundingBox) {
         this.bounds = this.bounds.scale(boundsBefore, boundsAfter);
+        return this;
+    }
+
+    // Modifies self in-place to have at least the minimum width and height
+    // Returns self
+    setMinimumSize() {
+        const { width, height } = this.bounds.dimensions();
+        const minWidth = TextBoxData.MIN_WIDTH_FACTOR * this.fontSize;
+        const minHeight =
+            TextBoxData.MIN_HEIGHT_FACTOR * this.fontSize;
+        if (width < minWidth || height < minHeight) {
+            this.bounds.x1 = this.bounds.x0 + minWidth;
+            this.bounds.y1 = this.bounds.y0 + minHeight;
+        }
         return this;
     }
 }
