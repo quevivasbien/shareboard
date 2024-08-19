@@ -1,6 +1,6 @@
 {
 	"name": "shareboard",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"private": true,
 	"scripts": {
 		"dev": "vite dev",
@@ -23,6 +23,7 @@
 	},
 	"type": "module",
 	"dependencies": {
+		"firebase": "^10.13.0",
 		"konva": "^9.3.14",
 		"svelte-boxicons": "^1.0.4",
 		"svelte-konva": "^0.3.1"
