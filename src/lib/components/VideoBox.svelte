@@ -36,8 +36,8 @@
             for (const track of event.streams[0].getTracks()) {
                 remoteStream.addTrack(track);
             }
+            remoteVideo.srcObject = remoteStream;
         }
-        remoteVideo.srcObject = remoteStream;
     });
 
     async function setVideoStream(cameraEnabled: boolean) {
@@ -54,7 +54,6 @@
         });
         for (const track of videoStream.getVideoTracks()) {
             pc.addTrack(track, videoStream);
-            // TODO: Remove tracks when disabling
         }
         localVideo.srcObject = videoStream;
     }
@@ -69,7 +68,6 @@
         });
         for (const track of audioStream.getAudioTracks()) {
             pc.addTrack(track, audioStream);
-            // TODO: Remove tracks when disabling
         }
     }
 
@@ -92,7 +90,6 @@
         const answerCandidates = collection(roomRef, "answerCandidates");
 
         pc.onicecandidate = (event) => {
-            console.log("Caller got ICE candidate", event.candidate);
             if (event.candidate) {
                 addDoc(offerCandidates, event.candidate.toJSON());
             }
@@ -103,7 +100,6 @@
         // Listen for answers
         onSnapshot(roomRef, (snapshot) => {
             const data = snapshot.data();
-            console.log("Got updated room: ", data);
             if (!pc.currentRemoteDescription && data?.answer) {
                 pc.setRemoteDescription(new RTCSessionDescription(data.answer));
             }
@@ -114,7 +110,6 @@
             for (const change of snapshot.docChanges()) {
                 if (change.type === "added") {
                     const candidate = new RTCIceCandidate(change.doc.data());
-                    console.log("Got new ICE candidate: ", candidate);
                     pc.addIceCandidate(candidate);
                 }
             }
@@ -130,19 +125,17 @@
         
         const roomSnapshot = await getDoc(roomRef);
         if (!roomSnapshot.exists()) {
-            console.log("Room not found");
             return;
         }
+        roomID = roomToJoin;
 
         pc.onicecandidate = (event) => {
-            console.log("Joiner got ICE candidate", event.candidate);
             if (event.candidate) {
                 addDoc(answerCandidates, event.candidate.toJSON());
             }
         }
 
         const room = roomSnapshot.data();
-        console.log("Found room: ", room);
         await pc.setRemoteDescription(new RTCSessionDescription(room.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -157,7 +150,6 @@
             for (const change of snapshot.docChanges()) {
                 if (change.type === "added") {
                     const candidate = new RTCIceCandidate(change.doc.data());
-                    console.log("Got new ICE candidate: ", candidate);
                     pc.addIceCandidate(candidate);
                 }
             }
@@ -185,7 +177,9 @@
         </label>
     </div>
 
+    <!-- svelte-ignore a11y-media-has-caption -->
     <video
+        autoplay
         bind:this={remoteVideo}
         width={CAMERA_WIDTH}
         height={CAMERA_HEIGHT}
