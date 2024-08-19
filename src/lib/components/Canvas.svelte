@@ -416,6 +416,7 @@
     });
 
     undo = () => {
+        resetSelections(false);
         const lastAction = history.pop();
         if (lastAction) {
             if (lastAction.type === "draw") {

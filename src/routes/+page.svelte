@@ -15,7 +15,7 @@
     let toolState: ToolState = {
         activeTool: "pencil",
         color: "#000000",
-        size: 5,
+        size: 3,
         style: "solid",
         fontSize: 16,
         fontFace: "sans-serif",
