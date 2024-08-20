@@ -1,5 +1,6 @@
 <script lang="ts">
     import { BxCollapse, BxSave, BxUndo, BxVideo } from "svelte-boxicons";
+    import { onMount } from "svelte";
 
     import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
     import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
@@ -9,6 +10,7 @@
     import VideoBox from "$lib/components/VideoBox.svelte";
     import { fade } from "svelte/transition";
     import { logout } from "$lib/firebase";
+    import { getRTCPeerConnection } from "$lib/webrtc";
 
     let undo: () => void;
     let historyEmpty: boolean;
@@ -26,9 +28,10 @@
 
     let showVideo = false;
 
-    function toggleVideo() {
-        showVideo = !showVideo;
-    }
+    let peerConnection: RTCPeerConnection;
+    onMount(() => {
+        peerConnection = getRTCPeerConnection();
+    });
 </script>
 
 <div
@@ -67,7 +70,7 @@
         {:else}
             <a href="./auth/login" class="text-blue-500 hover:underline">Login</a>
         {/if}
-        <button on:click={toggleVideo}>
+        <button class="disabled:opacity-50" on:click={() => (showVideo = !showVideo)} disabled={!$userStore}>
             {#if showVideo}
                 <BxCollapse />
             {:else}
@@ -91,7 +94,7 @@
 
     {#if showVideo}
         <div class="absolute top-0 right-0" transition:fade={{ duration: 100 }}>
-            <VideoBox />
+            <VideoBox bind:pc={peerConnection} />
         </div>
     {/if}
 </div>

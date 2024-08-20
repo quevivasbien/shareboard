@@ -62,3 +62,7 @@
         </div>
     {/if}
 </form>
+
+<div class="max-w-md mx-auto text-center">
+    Don't have an account? <a class="text-blue-500 hover:underline" href="./register">Sign up</a>.
+</div>

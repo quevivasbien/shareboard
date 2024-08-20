@@ -1,31 +1,20 @@
 <script lang="ts">
-    import { db } from "$lib/firebase";
-    import {
-        addDoc,
-        collection,
-        doc,
-        getDoc,
-        onSnapshot,
-        updateDoc,
-    } from "firebase/firestore";
     import { onMount } from "svelte";
+    import { startCall, joinCall } from "$lib/webrtc";
+    import {
+        BxCamera,
+        BxCameraOff,
+        BxCheckCircle,
+        BxCopy,
+        BxMicrophone,
+        BxMicrophoneOff,
+    } from "svelte-boxicons";
+
+    export let pc: RTCPeerConnection;
 
     const CAMERA_WIDTH = 640;
     const CAMERA_HEIGHT = 480;
 
-    const SERVERS = {
-        iceServers: [
-            {
-                urls: [
-                    "stun:stun1.l.google.com:19302",
-                    "stun:stun2.l.google.com:19302",
-                ],
-            },
-        ],
-        iceCandidatePoolSize: 10,
-    };
-
-    const pc = new RTCPeerConnection(SERVERS);
     let roomID: string | null = null;
 
     let localVideo: HTMLVideoElement;
@@ -118,91 +107,25 @@
     $: setCamera(cameraEnabled);
     $: setAudioStream(micEnabled);
 
-    async function call() {
-        const offerDescription = await pc.createOffer();
-        await pc.setLocalDescription(offerDescription);
-
-        // Create db entry with information about offer
-        const room = {
-            offer: {
-                type: offerDescription.type,
-                sdp: offerDescription.sdp,
-            },
-        };
-        const roomRef = await addDoc(collection(db, "rooms"), room);
-        const offerCandidates = collection(roomRef, "offerCandidates");
-        const answerCandidates = collection(roomRef, "answerCandidates");
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                addDoc(offerCandidates, event.candidate.toJSON());
-            }
-        };
-
-        roomID = roomRef.id;
-
-        // Listen for answers
-        onSnapshot(roomRef, (snapshot) => {
-            const data = snapshot.data();
-            if (!pc.currentRemoteDescription && data?.answer) {
-                pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            }
-        });
-
-        // Listen for ICE candidates
-        onSnapshot(answerCandidates, (snapshot) => {
-            for (const change of snapshot.docChanges()) {
-                if (change.type === "added") {
-                    const candidate = new RTCIceCandidate(change.doc.data());
-                    pc.addIceCandidate(candidate);
-                }
-            }
-        });
-    }
-
     let roomToJoin = "";
+    let amHost = false;
 
-    async function join() {
-        const roomRef = doc(db, "rooms", roomToJoin);
-        const offerCandidates = collection(roomRef, "offerCandidates");
-        const answerCandidates = collection(roomRef, "answerCandidates");
-
-        const roomSnapshot = await getDoc(roomRef);
-        if (!roomSnapshot.exists()) {
+    let roomIDCopied = false;
+    function copyRoomID() {
+        if (!roomID) {
+            console.error("Tried to copy roomID but it was null");
             return;
         }
-        roomID = roomToJoin;
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                addDoc(answerCandidates, event.candidate.toJSON());
-            }
-        };
-
-        const room = roomSnapshot.data();
-        await pc.setRemoteDescription(new RTCSessionDescription(room.offer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await updateDoc(roomRef, {
-            answer: {
-                type: answer.type,
-                sdp: answer.sdp,
-            },
-        });
-
-        onSnapshot(offerCandidates, (snapshot) => {
-            for (const change of snapshot.docChanges()) {
-                if (change.type === "added") {
-                    const candidate = new RTCIceCandidate(change.doc.data());
-                    pc.addIceCandidate(candidate);
-                }
-            }
-        });
+        navigator.clipboard.writeText(roomID);
+        roomIDCopied = true;
     }
 </script>
 
-<div class="flex flex-col" style="width: {CAMERA_WIDTH}px;">
-    <div class="relative" style="width: {CAMERA_WIDTH}px; height: {CAMERA_HEIGHT}px;">
+<div class="flex flex-col gap-2 px-2 bg-white m-2 p-2 drop-shadow" style="width: {CAMERA_WIDTH}px;">
+    <div
+        class="relative"
+        style="height: {CAMERA_HEIGHT}px;"
+    >
         <!-- svelte-ignore a11y-media-has-caption -->
         <video
             autoplay
@@ -210,48 +133,78 @@
             width={CAMERA_WIDTH}
             height={CAMERA_HEIGHT}
             class="bg-black absolute top-0 left-0"
-            style="display: ${connectionState === 'connected' ? 'block' : 'none'}"
+            style="display: ${connectionState === 'connected'
+                ? 'block'
+                : 'none'}"
         />
         <!-- svelte-ignore a11y-media-has-caption -->
         <video
             autoplay
             bind:this={localVideo}
-            width={connectionState === 'connected' ? CAMERA_WIDTH / 3 : CAMERA_WIDTH}
-            height={connectionState === 'connected' ? CAMERA_HEIGHT / 3 : CAMERA_HEIGHT}
-            class="bg-black absolute bottom-0 right-0"
+            width={connectionState === "connected"
+                ? CAMERA_WIDTH / 3
+                : CAMERA_WIDTH}
+            height={connectionState === "connected"
+                ? CAMERA_HEIGHT / 3
+                : CAMERA_HEIGHT}
+            class="bg-black absolute top-0 right-0"
         />
     </div>
     <div class="flex flex-row gap-2 justify-end">
-        <label>
-            <input type="checkbox" bind:checked={cameraEnabled} />
-            Camera
+        <label class="cursor-pointer">
+            <input type="checkbox" bind:checked={cameraEnabled} hidden />
+            {#if cameraEnabled}<BxCamera />{:else}<BxCameraOff />{/if}
         </label>
-        <label>
-            <input type="checkbox" bind:checked={micEnabled} />
-            Microphone
+        <label class="cursor-pointer">
+            <input type="checkbox" bind:checked={micEnabled} hidden />
+            {#if micEnabled}<BxMicrophone />{:else}<BxMicrophoneOff />{/if}
         </label>
     </div>
 
-    <button
-        class="p-2 border disabled:cursor-not-allowed disabled:opacity-50"
-        on:click={call}
-        disabled={roomID !== null}>Call</button
-    >
-    <form on:submit|preventDefault={join}>
-        <input
-            type="text"
-            class="disabled:cursor-not-allowed disabled:opacity-50"
-            bind:value={roomToJoin}
-            disabled={roomID !== null}
-        />
+    {#if roomID === null}
         <button
-            type="submit"
-            class="p-2 border disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={roomID !== null}>Join</button
+            class="p-2 border rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100"
+            on:click={() => {
+                amHost = true;
+                startCall(pc).then((result) => (roomID = result));
+            }}
+            disabled={roomID !== null}>Create Room</button
         >
-    </form>
+        <form
+            class="flex flex-row gap-2"
+            on:submit|preventDefault={() => {
+                amHost = false;
+                joinCall(pc, roomToJoin).then((success) =>
+                    success ? (roomID = roomToJoin) : (roomID = null),
+                );
+            }}
+        >
+            <input
+                type="text"
+                class="p-2 border rounded disabled:cursor-not-allowed disabled:opacity-50 w-full"
+                bind:value={roomToJoin}
+                disabled={roomID !== null}
+                placeholder="Room ID"
+            />
+            <button
+                type="submit"
+                class="py-2 px-8 border rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100"
+                disabled={roomID !== null}>Join</button
+            >
+        </form>
+    {:else if amHost && connectionState === "disconnected"}
+        <div class="p-2 border rounded w-full flex flex-row justify-between">
+            <div>
+                Room ID is <button class="text-gray-700" on:click={copyRoomID}
+                    >{roomID}</button
+                >
+            </div>
+            <div class="flex flex-row gap-2">
+                <button on:click={copyRoomID}>
+                    <BxCopy />
+                </button>
+                {#if roomIDCopied}<BxCheckCircle />{/if}
+            </div>
+        </div>
+    {/if}
 </div>
-
-{#if roomID}
-    Current room ID is {roomID}
-{/if}
