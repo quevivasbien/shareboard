@@ -1,3 +1,4 @@
+import type { User } from "firebase/auth";
 import { writable } from "svelte/store";
 
 export interface ToolState {
@@ -10,3 +11,5 @@ export interface ToolState {
 }
 
 export const textBoxInputStore = writable<HTMLTextAreaElement | null>(null);
+
+export const userStore = writable<User | null>(null);
