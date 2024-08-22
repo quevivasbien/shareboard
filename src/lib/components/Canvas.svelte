@@ -8,13 +8,14 @@
     import SelectedElements from "./SelectedElements.svelte";
     import Selection from "./Selection.svelte";
     import {
+    CanvasElementData,
         LineData,
         SelectionData,
         TextBoxData,
-        type CanvasElementData,
     } from "$lib/canvasElements";
     import { CanvasHistory } from "$lib/canvasState";
     import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
+    import { onMount } from "svelte";
 
     // Bound values
     export let toolState: ToolState;
@@ -22,15 +23,15 @@
     export let historyEmpty: boolean;
     export let save: () => void;
 
+    // Unbound values
+    export let peerConnection: RTCPeerConnection;
+
     let lastTool = toolState.activeTool;
 
     const BOARD_SIZE = {
         width: 1600,
         height: 1600,
     };
-
-    const MIN_TEXTBOX_WIDTH_FACTOR = 8;
-    const MIN_TEXTBOX_HEIGHT_FACTOR = 6;
 
     // Location of the mouse within the canvas
     let mousePosition: { x: number; y: number } = { x: 0, y: 0 };
@@ -65,6 +66,57 @@
     // Keeps track of recent edits to the canvas
     let history: CanvasHistory = new CanvasHistory();
 
+    let dataChannelSender: RTCDataChannel | null = null;
+    let dataChannelOpen = false;
+
+    // Set up channels to share data with peer via WebRTC connection
+    onMount(() => {
+        peerConnection.ondatachannel = (event) => {
+            if (event.channel.label !== "canvas-data") {
+                return;
+            }
+            event.channel.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                receiveMessage(message);
+            };
+            event.channel.onopen = () => {
+                console.log("Channel opened");
+                dataChannelOpen = true;
+            };
+            event.channel.onclose = () => {
+                console.log("Channel closed");
+                dataChannelOpen = false;
+            };
+        }
+
+        dataChannelSender = peerConnection.createDataChannel("canvas-data");
+    });
+
+    interface DataChannelMessage {
+        type: string;
+        payload: any;
+    };
+
+    function sendMessage(message: DataChannelMessage) {
+        if (!dataChannelSender || !dataChannelOpen) {
+            return;
+        }
+        console.log("Sending message:", message);
+        dataChannelSender.send(JSON.stringify(message));
+    }
+
+    function receiveMessage(message: DataChannelMessage) {
+        switch (message.type) {
+            case "draw":
+                const element = CanvasElementData.fromPlain(message.payload);
+                elements = [...elements, element];
+                break;
+            default:
+                console.error("Got unsupported message type:", message.type);
+                break;
+        }
+    }
+
     function removeCurrentTextBox(addToElements: boolean) {
         if (!currentTextBox) {
             return;
@@ -74,6 +126,10 @@
             elements = [...elements, currentTextBox];
             history.add("draw", currentTextBox);
             history = history;
+            sendMessage({
+                type: "draw",
+                payload: currentTextBox.toPlain(),
+            });
         }
         textBoxInputStore.update((t) => {
             if (t) {
@@ -221,7 +277,6 @@
                         break;
                     }
                 }
-                console.log(idx);
                 if (idx !== -1) {
                     // If so, select that text box
                     const textBox = elements[idx] as TextBoxData;
@@ -371,6 +426,7 @@
             elements = [...elements, currentLine];
             history.add("draw", currentLine);
             history = history;
+            sendMessage({ type: "draw", payload: currentLine.toPlain() });
             currentLine = null;
         } else if (toolState.activeTool === "eraser") {
             lastMousePos = null;

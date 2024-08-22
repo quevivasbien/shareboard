@@ -7,7 +7,7 @@ export abstract class CanvasElementData {
     mouseIsOver: boolean = false;
 
     constructor() {}
-    
+
     // Determine whether the line AB intersects this element
     // Input takes the form [Ax, Ay, Bx, By]
     intersects(line: [number, number, number, number]) {
@@ -25,6 +25,34 @@ export abstract class CanvasElementData {
     // Scale the element in-place and return it
     // boundsBefore and boundsAfter are the bounding boxes for an encompassing selection
     abstract scale(boundsBefore: BoundingBox, boundsAfter: BoundingBox): CanvasElementData;
+
+    // Convert to serializable format. Result should contain two fields:
+    // type: string (same as the class name)
+    // fields: any (containing the relevant data for the type)
+    abstract toPlain(): { type: string; fields: any };
+
+    // Deserialize from JSON format
+    static fromPlain({ type, fields }: { type: string; fields: any }) {
+        switch (type) {
+            case "LineData":
+                return new LineData(fields.points, fields.color, fields.width, fields.style);
+            case "TextBoxData":
+                return new TextBoxData(
+                    fields.text,
+                    new BoundingBox(
+                        fields.x0,
+                        fields.y0,
+                        fields.x1,
+                        fields.y1
+                    ),
+                    fields.color,
+                    fields.fontSize,
+                    fields.fontFace
+                );
+            default:
+                throw new Error(`Unknown element type when deserializing: ${type}`);
+        }
+    }
 }
 
 export class LineData extends CanvasElementData {
@@ -95,6 +123,18 @@ export class LineData extends CanvasElementData {
         }
         return this;
     }
+
+    toPlain() {
+        return {
+            type: "LineData",
+            fields: {
+                points: this.points,
+                color: this.color,
+                width: this.width,
+                style: this.style,
+            },
+        };
+    }
 }
 
 export class TextBoxData extends CanvasElementData {
@@ -141,6 +181,22 @@ export class TextBoxData extends CanvasElementData {
             this.bounds.y1 = this.bounds.y0 + minHeight;
         }
         return this;
+    }
+
+    toPlain() {
+        return {
+            type: "TextBoxData",
+            fields: {
+                text: this.text,
+                x0: this.bounds.x0,
+                y0: this.bounds.y0,
+                x1: this.bounds.x1,
+                y1: this.bounds.y1,
+                color: this.color,
+                fontSize: this.fontSize,
+                fontFace: this.fontFace,
+            },
+        };
     }
 }
 

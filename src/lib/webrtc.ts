@@ -1,7 +1,7 @@
-import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, CollectionReference, deleteDoc, doc, DocumentReference, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "./firebase";
 import { get } from "svelte/store";
-import { userStore } from "./stores";
+import { textBoxInputStore, userStore } from "./stores";
 
 
 const SERVERS = {
@@ -20,6 +20,15 @@ export function getRTCPeerConnection() {
     return new RTCPeerConnection(SERVERS);
 }
 
+async function clearCandidates(candidateCollection: CollectionReference) {
+    const candidates = await getDocs(candidateCollection);
+    const promises: Promise<void>[] = [];
+    candidates.forEach((c) => {
+        promises.push(deleteDoc(c.ref));
+    });
+    await Promise.all(promises);
+}
+
 export async function startCall(pc: RTCPeerConnection) {
     const user = get(userStore);
     if (!user) {
@@ -31,6 +40,7 @@ export async function startCall(pc: RTCPeerConnection) {
 
     // Create db entry with information about offer
     const room = {
+        createdTime: new Date().toISOString(),
         offer: {
             type: offerDescription.type,
             sdp: offerDescription.sdp,
@@ -42,6 +52,10 @@ export async function startCall(pc: RTCPeerConnection) {
     await setDoc(roomRef, room);
     const offerCandidates = collection(roomRef, "offerCandidates");
     const answerCandidates = collection(roomRef, "answerCandidates");
+
+    // Get rid of any candidates from previous calls
+    await clearCandidates(offerCandidates);
+    await clearCandidates(answerCandidates);
 
     pc.onicecandidate = (event) => {
         if (event.candidate) {

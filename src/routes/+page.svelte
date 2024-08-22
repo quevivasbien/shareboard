@@ -1,6 +1,5 @@
 <script lang="ts">
     import { BxCollapse, BxSave, BxUndo, BxVideo } from "svelte-boxicons";
-    import { onMount } from "svelte";
 
     import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
     import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
@@ -28,10 +27,7 @@
 
     let showVideo = false;
 
-    let peerConnection: RTCPeerConnection;
-    onMount(() => {
-        peerConnection = getRTCPeerConnection();
-    });
+    let peerConnection: RTCPeerConnection = getRTCPeerConnection();
 </script>
 
 <div
@@ -83,7 +79,7 @@
 <div class="relative">
     <div class="absolute top-0 left-0 flex flex-col h-screen bg-gray-100">
         <div class="overflow-scroll">
-            <Canvas bind:undo bind:historyEmpty bind:save bind:toolState />
+            <Canvas bind:undo bind:historyEmpty bind:save bind:toolState {peerConnection} />
         </div>
     </div>
     <textarea
@@ -94,7 +90,7 @@
 
     {#if showVideo}
         <div class="absolute top-0 right-0" transition:fade={{ duration: 100 }}>
-            <VideoBox bind:pc={peerConnection} />
+            <VideoBox pc={peerConnection} />
         </div>
     {/if}
 </div>
