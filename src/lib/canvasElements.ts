@@ -3,10 +3,14 @@ import Line from "./components/Line.svelte";
 import TextBox from "./components/TextBox.svelte";
 
 export abstract class CanvasElementData {
+    // A unique identifier
+    readonly id: string;
     // Whether the mouse is currently over this element
     mouseIsOver: boolean = false;
 
-    constructor() {}
+    constructor(id?: string) {
+        this.id = id ?? crypto.randomUUID();
+    }
 
     // Determine whether the line AB intersects this element
     // Input takes the form [Ax, Ay, Bx, By]
@@ -35,7 +39,7 @@ export abstract class CanvasElementData {
     static fromPlain({ type, fields }: { type: string; fields: any }) {
         switch (type) {
             case "LineData":
-                return new LineData(fields.points, fields.color, fields.width, fields.style);
+                return new LineData(fields.points, fields.color, fields.width, fields.style, fields.id);
             case "TextBoxData":
                 return new TextBoxData(
                     fields.text,
@@ -47,7 +51,8 @@ export abstract class CanvasElementData {
                     ),
                     fields.color,
                     fields.fontSize,
-                    fields.fontFace
+                    fields.fontFace,
+                    fields.id
                 );
             default:
                 throw new Error(`Unknown element type when deserializing: ${type}`);
@@ -61,8 +66,9 @@ export class LineData extends CanvasElementData {
         public color: string,
         public width: number,
         public style: "solid" | "dash",
+        id?: string
     ) {
-        super();
+        super(id);
     }
 
     intersects(line: [number, number, number, number]) {
@@ -132,6 +138,7 @@ export class LineData extends CanvasElementData {
                 color: this.color,
                 width: this.width,
                 style: this.style,
+                id: this.id,
             },
         };
     }
@@ -147,8 +154,9 @@ export class TextBoxData extends CanvasElementData {
         public color: string,
         public fontSize: number,
         public fontFace: string,
+        id?: string
     ) {
-        super();
+        super(id);
     }
 
     componentType() {
@@ -195,6 +203,7 @@ export class TextBoxData extends CanvasElementData {
                 color: this.color,
                 fontSize: this.fontSize,
                 fontFace: this.fontFace,
+                id: this.id,
             },
         };
     }
