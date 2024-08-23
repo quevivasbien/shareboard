@@ -8,13 +8,14 @@
     import SelectedElements from "./SelectedElements.svelte";
     import Selection from "./Selection.svelte";
     import {
+    CanvasElementData,
         LineData,
         SelectionData,
         TextBoxData,
-        type CanvasElementData,
     } from "$lib/canvasElements";
     import { CanvasHistory } from "$lib/canvasState";
     import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
+    import { onMount } from "svelte";
 
     // Bound values
     export let toolState: ToolState;
@@ -22,15 +23,15 @@
     export let historyEmpty: boolean;
     export let save: () => void;
 
+    // Unbound values
+    export let peerConnection: RTCPeerConnection;
+
     let lastTool = toolState.activeTool;
 
     const BOARD_SIZE = {
         width: 1600,
         height: 1600,
     };
-
-    const MIN_TEXTBOX_WIDTH_FACTOR = 8;
-    const MIN_TEXTBOX_HEIGHT_FACTOR = 6;
 
     // Location of the mouse within the canvas
     let mousePosition: { x: number; y: number } = { x: 0, y: 0 };
@@ -65,6 +66,99 @@
     // Keeps track of recent edits to the canvas
     let history: CanvasHistory = new CanvasHistory();
 
+    let dataChannelSender: RTCDataChannel | null = null;
+    let dataChannelOpen = false;
+
+    // Set up channels to share data with peer via WebRTC connection
+    onMount(() => {
+        peerConnection.ondatachannel = (event) => {
+            if (event.channel.label !== "canvas-data") {
+                return;
+            }
+            event.channel.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                receiveMessage(message);
+            };
+            event.channel.onopen = () => {
+                console.log("Channel opened");
+                dataChannelOpen = true;
+            };
+            event.channel.onclose = () => {
+                console.log("Channel closed");
+                dataChannelOpen = false;
+            };
+        }
+
+        dataChannelSender = peerConnection.createDataChannel("canvas-data");
+    });
+
+    interface DataChannelMessage {
+        type: string;
+        payload: any;
+    };
+
+    function sendMessage(message: DataChannelMessage) {
+        console.log("Sending", message)
+        if (!dataChannelSender || !dataChannelOpen) {
+            return;
+        }
+        dataChannelSender.send(JSON.stringify(message));
+    }
+
+    function receiveMessage(message: DataChannelMessage) {
+        console.log("Received", message)
+        switch (message.type) {
+            case "draw": {
+                const toDraw = message.payload.map((e: { type: string, fields: any }) => CanvasElementData.fromPlain(e));
+                elements = [...elements, ...toDraw];
+                break;
+            }
+            case "erase": {
+                const toErase = message.payload as string[];
+                elements = elements.filter((e) => !toErase.includes(e.id));
+                break;
+            }
+            case "move": {
+                const { ids, dx, dy } = message.payload;
+                elements = elements.map((e) => {
+                    if (ids.includes(e.id)) {
+                        return e.move(dx, dy);
+                    } else {
+                        return e;
+                    }
+                });
+                break;
+            }
+            case "resize": {
+                const { ids, boundsBefore, boundsAfter } = message.payload;
+                const before = new BoundingBox(
+                    boundsBefore.x0,
+                    boundsBefore.y0,
+                    boundsBefore.x1,
+                    boundsBefore.y1
+                );
+                const after = new BoundingBox(
+                    boundsAfter.x0,
+                    boundsAfter.y0,
+                    boundsAfter.x1,
+                    boundsAfter.y1
+                );
+                elements = elements.map((e) => {
+                    if (ids.includes(e.id)) {
+                        return e.scale(before, after);
+                    } else {
+                        return e;
+                    }
+                });
+                break;
+            }
+            default: {
+                console.error("Got unsupported message type:", message.type);
+                break;
+            }
+        }
+    }
+
     function removeCurrentTextBox(addToElements: boolean) {
         if (!currentTextBox) {
             return;
@@ -74,6 +168,10 @@
             elements = [...elements, currentTextBox];
             history.add("draw", currentTextBox);
             history = history;
+            sendMessage({
+                type: "draw",
+                payload: [currentTextBox.toPlain()],
+            });
         }
         textBoxInputStore.update((t) => {
             if (t) {
@@ -125,6 +223,14 @@
             dy,
         });
         history = history;
+        sendMessage({
+            type: "move",
+            payload: {
+                ids: selectedElements.map((e: CanvasElementData) => e.id),
+                dx,
+                dy,
+            }
+        });
     }
 
     function resizeSelections() {
@@ -156,12 +262,34 @@
             boundsAfter,
         });
         history = history;
+        sendMessage({
+            type: "resize",
+            payload: {
+                ids: selectedElements.map((e: CanvasElementData) => e.id),
+                boundsBefore: {
+                    x0: boundsBefore.x0,
+                    y0: boundsBefore.y0,
+                    x1: boundsBefore.x1,
+                    y1: boundsBefore.y1,
+                },
+                boundsAfter: {
+                    x0: boundsAfter.x0,
+                    y0: boundsAfter.y0,
+                    x1: boundsAfter.x1,
+                    y1: boundsAfter.y1,
+                },
+            },
+        })
     }
 
     function deleteSelections() {
         history.add("erase", selectedElements);
-        selectedElements = [];
         history = history;
+        sendMessage({
+            type: "erase",
+            payload: selectedElements.map((e) => e.id),
+        });
+        selectedElements = [];
     }
 
     function resetSelections(setNoHover: boolean = false) {
@@ -221,7 +349,6 @@
                         break;
                     }
                 }
-                console.log(idx);
                 if (idx !== -1) {
                     // If so, select that text box
                     const textBox = elements[idx] as TextBoxData;
@@ -329,14 +456,19 @@
                 const bx = pos.x;
                 const by = pos.y;
                 // Look for elements that intersect line AB
+                const toErase: CanvasElementData[] = [];
                 elements = elements.filter((element) => {
                     if (element.intersects([ax, ay, bx, by])) {
-                        history.add("erase", [element]);
+                        toErase.push(element);
                         return false;
                     }
                     return true;
                 });
-                history = history;
+                if (toErase.length > 0) {
+                    history.add("erase", toErase);
+                    history = history;
+                    sendMessage({ type: "erase", payload: toErase.map((element) => element.id) });
+                }
                 break;
 
             case "text":
@@ -371,6 +503,7 @@
             elements = [...elements, currentLine];
             history.add("draw", currentLine);
             history = history;
+            sendMessage({ type: "draw", payload: [currentLine.toPlain()] });
             currentLine = null;
         } else if (toolState.activeTool === "eraser") {
             lastMousePos = null;
@@ -420,14 +553,29 @@
         const lastAction = history.pop();
         if (lastAction) {
             if (lastAction.type === "draw") {
-                elements = elements.filter(
-                    (element) => element !== lastAction.payload,
-                );
+                // TODO: This needs to be reworked, since elements can be re-added out of order
+                let idxToRemove = -1;
+                for (let i = 0; i < elements.length; i++) {
+                    if (elements[i].id === lastAction.payload.id) {
+                        idxToRemove = i;
+                        break;
+                    }
+                }
+                if (idxToRemove !== -1) {
+                    sendMessage({ type: "erase", payload: [lastAction.payload.id] });
+                    elements.splice(idxToRemove, 1);
+                    elements = elements;
+                }
+                else {
+                    console.log("Missing element for undo draw. Trying next action...");
+                    return undo();
+                }
             } else if (lastAction.type === "erase") {
                 elements = [
                     ...elements,
                     ...(lastAction.payload as CanvasElementData[]),
                 ];
+                sendMessage({ type: "draw", payload: lastAction.payload.map((element: CanvasElementData) => element.toPlain()) });
             } else if (lastAction.type === "move") {
                 const { payload } = lastAction;
                 elements = elements.map((e: CanvasElementData) => {
@@ -435,6 +583,14 @@
                         return e.move(-payload.dx, -payload.dy);
                     } else {
                         return e;
+                    }
+                });
+                sendMessage({
+                    type: "move",
+                    payload: {
+                        ids: payload.elements.map((e: CanvasElementData) => e.id),
+                        dx: -payload.dx,
+                        dy: -payload.dy,
                     }
                 });
             } else if (lastAction.type === "resize") {
@@ -449,6 +605,24 @@
                         return e;
                     }
                 });
+                sendMessage({
+                    type: "resize",
+                    payload: {
+                        ids: payload.elements.map((e: CanvasElementData) => e.id),
+                        boundsBefore: {
+                            x0: payload.boundsAfter.x0,
+                            y0: payload.boundsAfter.y0,
+                            x1: payload.boundsAfter.x1,
+                            y1: payload.boundsAfter.y1,
+                        },
+                        boundsAfter: {
+                            x0: payload.boundsBefore.x0,
+                            y0: payload.boundsBefore.y0,
+                            x1: payload.boundsBefore.x1,
+                            y1: payload.boundsBefore.y1,
+                        },
+                    },
+                })
             }
         }
         history = history;

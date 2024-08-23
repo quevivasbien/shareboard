@@ -1,11 +1,15 @@
 <script lang="ts">
-    import { BxSave, BxUndo } from "svelte-boxicons";
+    import { BxCollapse, BxSave, BxUndo, BxVideo } from "svelte-boxicons";
 
     import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
     import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
     import Canvas from "$lib/components/Canvas.svelte";
-    import { textBoxInputStore, type ToolState } from "$lib/stores";
+    import { textBoxInputStore, userStore, type ToolState } from "$lib/stores";
     import TextOptionsMenu from "$lib/components/TextOptionsMenu.svelte";
+    import VideoBox from "$lib/components/VideoBox.svelte";
+    import { fade } from "svelte/transition";
+    import { logout } from "$lib/firebase";
+    import { getRTCPeerConnection } from "$lib/webrtc";
 
     let undo: () => void;
     let historyEmpty: boolean;
@@ -20,6 +24,10 @@
         fontSize: 16,
         fontFace: "sans-serif",
     };
+
+    let showVideo = false;
+
+    let peerConnection: RTCPeerConnection = getRTCPeerConnection();
 </script>
 
 <div
@@ -45,19 +53,33 @@
                 bind:fontFace={toolState.fontFace}
             />
         {/if}
-        <button class={historyEmpty ? "text-gray-400" : ""} on:click={undo}
-            ><BxUndo /></button
+        <button on:click={save}><BxSave /></button>
+        <button
+            class={historyEmpty ? "text-gray-400 cursor-default" : ""}
+            on:click={undo}><BxUndo /></button
         >
     </div>
     <div class="flex flex-row gap-8 p-2 items-center justify-end">
-        <button on:click={save}><BxSave /></button>
+        {#if $userStore}
+            <div class="text-gray-500">Logged in as {$userStore.email}</div>
+            <button class="text-blue-500 hover:underline" on:click={logout}>Logout</button>
+        {:else}
+            <a href="./auth/login" class="text-blue-500 hover:underline">Login</a>
+        {/if}
+        <button class="disabled:opacity-50" on:click={() => (showVideo = !showVideo)} disabled={!$userStore}>
+            {#if showVideo}
+                <BxCollapse />
+            {:else}
+                <BxVideo />
+            {/if}
+        </button>
     </div>
 </div>
 
 <div class="relative">
     <div class="absolute top-0 left-0 flex flex-col h-screen bg-gray-100">
         <div class="overflow-scroll">
-            <Canvas bind:undo bind:historyEmpty bind:save bind:toolState />
+            <Canvas bind:undo bind:historyEmpty bind:save bind:toolState {peerConnection} />
         </div>
     </div>
     <textarea
@@ -65,6 +87,12 @@
         style="line-height: 1"
         bind:this={$textBoxInputStore}
     ></textarea>
+
+    {#if showVideo}
+        <div class="absolute top-0 right-0" transition:fade={{ duration: 100 }}>
+            <VideoBox pc={peerConnection} />
+        </div>
+    {/if}
 </div>
 
 <!-- Just so other cursor types can be used -->
