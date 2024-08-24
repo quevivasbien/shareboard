@@ -1,7 +1,7 @@
-import { addDoc, collection, CollectionReference, deleteDoc, doc, DocumentReference, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, CollectionReference, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "./firebase";
 import { get } from "svelte/store";
-import { textBoxInputStore, userStore } from "./stores";
+import { userStore } from "./stores";
 
 
 const SERVERS = {
@@ -29,9 +29,9 @@ async function clearCandidates(candidateCollection: CollectionReference) {
     await Promise.all(promises);
 }
 
-export async function startCall(pc: RTCPeerConnection) {
+export async function startCall(pc: RTCPeerConnection, guestEmail: string) {
     const user = get(userStore);
-    if (!user) {
+    if (!user || !user.email) {
         console.error("Tried to start call while not logged in");
         return null;
     }
@@ -47,8 +47,8 @@ export async function startCall(pc: RTCPeerConnection) {
         },
     };
 
-    // TODO: Handle cases where room already exists
-    const roomRef = doc(db, "rooms", user.uid);
+    // Look for a pre-existing room with the same host and guest
+    const roomRef = doc(db, "rooms", user.email, "hosted", guestEmail);
     await setDoc(roomRef, room);
     const offerCandidates = collection(roomRef, "offerCandidates");
     const answerCandidates = collection(roomRef, "answerCandidates");
@@ -81,30 +81,36 @@ export async function startCall(pc: RTCPeerConnection) {
         }
     });
 
-    return roomRef.id;
+    // Update list of pending calls for guest
+    const guestPendingCalls = collection(db, "rooms", guestEmail, "invitations");
+    await addDoc(guestPendingCalls, { hostEmail: user.email });
+
+    return guestEmail;
 }
 
-export async function joinCall(pc: RTCPeerConnection, host: string) {
+export async function joinCall(pc: RTCPeerConnection, hostEmail: string) {
     const user = get(userStore);
     if (!user || !user.email) {
         console.error("Tried to join call while not logged in");
-        return;
+        return null;
     }
-    const roomRef = doc(db, "rooms", host);
+    
+    const roomRef = doc(db, "rooms", hostEmail, "hosted", user.email);
     const offerCandidates = collection(roomRef, "offerCandidates");
     const answerCandidates = collection(roomRef, "answerCandidates");
 
-    const roomSnapshot = await getDoc(roomRef);
-    if (!roomSnapshot.exists()) {
-        return false;
-    }
     pc.onicecandidate = (event) => {
         if (event.candidate) {
             addDoc(answerCandidates, event.candidate.toJSON());
         }
     };
 
+    const roomSnapshot = await getDoc(roomRef);
     const room = roomSnapshot.data();
+    if (!room) {
+        console.log("Room doesn't exist");
+        return null;
+    }
     await pc.setRemoteDescription(new RTCSessionDescription(room.offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
@@ -123,6 +129,10 @@ export async function joinCall(pc: RTCPeerConnection, host: string) {
             }
         }
     });
+
+    // Remove invitation
+    const pendingCallsCollection = collection(db, "rooms", user.email, "invitations");
+    await deleteDoc(doc(pendingCallsCollection, hostEmail));
     
-    return true;
+    return hostEmail;
 }

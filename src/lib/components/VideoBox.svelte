@@ -9,13 +9,19 @@
         BxMicrophone,
         BxMicrophoneOff,
     } from "svelte-boxicons";
+    import { db } from "$lib/firebase";
+    import { userStore } from "$lib/stores";
+    import {
+        collection,
+        onSnapshot,
+    } from "firebase/firestore";
 
     export let pc: RTCPeerConnection;
 
     const CAMERA_WIDTH = 640;
     const CAMERA_HEIGHT = 480;
 
-    let roomID: string | null = null;
+    let peerEmail: string | null = null;
 
     let localVideo: HTMLVideoElement;
     let videoStream: MediaStream | null = null;
@@ -107,25 +113,53 @@
     $: setCamera(cameraEnabled);
     $: setAudioStream(micEnabled);
 
-    let roomToJoin = "";
+    let guestEmail = "";
     let amHost = false;
 
-    let roomIDCopied = false;
-    function copyRoomID() {
-        if (!roomID) {
-            console.error("Tried to copy roomID but it was null");
+    interface PendingCall {
+        hostEmail: string;
+    }
+    let pendingCalls: PendingCall[] = [];
+
+    // Watch pending calls
+    onMount(() => {
+        if (!$userStore?.email) {
+            console.error("User not logged in when mounting VideoBox");
             return;
         }
-        navigator.clipboard.writeText(roomID);
-        roomIDCopied = true;
-    }
+        const pendingCallsCollection = collection(
+            db,
+            "rooms",
+            $userStore.email,
+            "invitations",
+        );
+        onSnapshot(pendingCallsCollection, (snapshot) => {
+            console.log("Found", snapshot.size, "new pending calls");
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "added") {
+                    const call = change.doc.data() as PendingCall;
+                    pendingCalls = [...pendingCalls, call];
+                }
+            });
+        });
+    });
+
+    // let roomIDCopied = false;
+    // function copyRoomID() {
+    //     if (!roomID) {
+    //         console.error("Tried to copy roomID but it was null");
+    //         return;
+    //     }
+    //     navigator.clipboard.writeText(roomID);
+    //     roomIDCopied = true;
+    // }
 </script>
 
-<div class="flex flex-col gap-2 px-2 bg-white m-2 p-2 drop-shadow" style="width: {CAMERA_WIDTH}px;">
-    <div
-        class="relative"
-        style="height: {CAMERA_HEIGHT}px;"
-    >
+<div
+    class="flex flex-col gap-2 px-2 bg-white m-2 p-2 drop-shadow"
+    style="width: {CAMERA_WIDTH}px;"
+>
+    <div class="relative" style="height: {CAMERA_HEIGHT}px;">
         <!-- svelte-ignore a11y-media-has-caption -->
         <video
             autoplay
@@ -161,40 +195,46 @@
         </label>
     </div>
 
-    {#if roomID === null}
-        <button
-            class="p-2 border rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100"
-            on:click={() => {
-                amHost = true;
-                startCall(pc).then((result) => (roomID = result));
-            }}
-            disabled={roomID !== null}>Create Room</button
-        >
+    {#if peerEmail === null}
         <form
             class="flex flex-row gap-2"
             on:submit|preventDefault={() => {
-                amHost = false;
-                joinCall(pc, roomToJoin).then((success) =>
-                    success ? (roomID = roomToJoin) : (roomID = null),
-                );
+                amHost = true;
+                startCall(pc, guestEmail).then((result) => (peerEmail = result));
             }}
         >
             <input
                 type="text"
                 class="p-2 border rounded disabled:cursor-not-allowed disabled:opacity-50 w-full"
-                bind:value={roomToJoin}
-                disabled={roomID !== null}
-                placeholder="Room ID"
+                bind:value={guestEmail}
+                disabled={peerEmail !== null}
+                placeholder="Guest's Email"
             />
             <button
                 type="submit"
-                class="py-2 px-8 border rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100"
-                disabled={roomID !== null}>Join</button
+                class="py-2 px-8 border-2 rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100 text-nowrap"
+                disabled={peerEmail !== null}>Create Room</button
             >
         </form>
+        {#if pendingCalls.length > 0}
+            <div class="p-2 w-full flex flex-col gap-2">
+                <div class="text-gray-700 font-bold text-center">
+                    Pending Calls
+                </div>
+                {#each pendingCalls as pendingCall}
+                    <button
+                        class="m-2 p-2 border-y hover:border-blue-500 w-full flex flex-row justify-between"
+                        on:click={async () => peerEmail = await joinCall(pc, pendingCall.hostEmail)}
+                    >
+                        <div>{pendingCall.hostEmail}</div>
+                        <div>Join</div>
+                    </button>
+                {/each}
+            </div>
+        {/if}
     {:else if amHost && connectionState === "disconnected"}
         <div class="p-2 border rounded w-full flex flex-row justify-between">
-            <div>
+            <!-- <div>
                 Room ID is <button class="text-gray-700" on:click={copyRoomID}
                     >{roomID}</button
                 >
@@ -204,7 +244,8 @@
                     <BxCopy />
                 </button>
                 {#if roomIDCopied}<BxCheckCircle />{/if}
-            </div>
+            </div> -->
+            Waiting for guest to join...
         </div>
     {/if}
 </div>

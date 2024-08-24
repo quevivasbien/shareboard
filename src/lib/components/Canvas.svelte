@@ -98,10 +98,10 @@
     };
 
     function sendMessage(message: DataChannelMessage) {
-        console.log("Sending", message)
         if (!dataChannelSender || !dataChannelOpen) {
             return;
         }
+        console.log("Sending", message)
         dataChannelSender.send(JSON.stringify(message));
     }
 
