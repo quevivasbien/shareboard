@@ -26,73 +26,104 @@
     };
 
     let showVideo = false;
+    $: if (!$userStore?.email) {
+        showVideo = false;
+    }
 
     let peerConnection: RTCPeerConnection = getRTCPeerConnection();
 </script>
 
-<div
-    class="flex flex-row flex-wrap justify-between w-full items-center px-2 border-b bg-white"
->
-    <div class="flex flex-row gap-8 p-2 items-center">
-        <ToolSelectMenu bind:activeTool={toolState.activeTool} />
-        <label class="flex flex-row gap-2 items-center">
-            <input
-                type="color"
-                class="cursor-pointer"
-                bind:value={toolState.color}
-            />
-        </label>
-        {#if toolState.activeTool === "pencil" || toolState.activeTool === "line"}
-            <PencilOptionsMenu
-                bind:lineWidth={toolState.size}
-                bind:lineStyle={toolState.style}
-            />
-        {:else if toolState.activeTool === "text"}
-            <TextOptionsMenu
-                bind:fontSize={toolState.fontSize}
-                bind:fontFace={toolState.fontFace}
-            />
-        {/if}
-        <button on:click={save}><BxSave /></button>
-        <button
-            class={historyEmpty ? "text-gray-400 cursor-default" : ""}
-            on:click={undo}><BxUndo /></button
-        >
-    </div>
-    <div class="flex flex-row gap-8 p-2 items-center justify-end">
-        {#if $userStore}
-            <div class="text-gray-500">Logged in as {$userStore.email}</div>
-            <button class="text-blue-500 hover:underline" on:click={logout}>Logout</button>
-        {:else}
-            <a href="./auth/login" class="text-blue-500 hover:underline">Login</a>
-        {/if}
-        <button class="disabled:opacity-50" on:click={() => (showVideo = !showVideo)} disabled={!$userStore}>
-            {#if showVideo}
-                <BxCollapse />
-            {:else}
-                <BxVideo />
+<div class="flex flex-col w-screen h-screen">
+    <div
+        class="flex flex-row flex-wrap justify-between w-full items-center px-2 border-b bg-white"
+    >
+        <div class="flex flex-row gap-8 p-2 items-center">
+            <ToolSelectMenu bind:activeTool={toolState.activeTool} />
+            <label class="flex flex-row gap-2 items-center">
+                <input
+                    type="color"
+                    class="cursor-pointer"
+                    bind:value={toolState.color}
+                />
+            </label>
+            {#if toolState.activeTool === "pencil" || toolState.activeTool === "line"}
+                <PencilOptionsMenu
+                    bind:lineWidth={toolState.size}
+                    bind:lineStyle={toolState.style}
+                />
+            {:else if toolState.activeTool === "text"}
+                <TextOptionsMenu
+                    bind:fontSize={toolState.fontSize}
+                    bind:fontFace={toolState.fontFace}
+                />
             {/if}
-        </button>
-    </div>
-</div>
-
-<div class="relative">
-    <div class="absolute top-0 left-0 flex flex-col h-screen bg-gray-100">
-        <div class="overflow-scroll">
-            <Canvas bind:undo bind:historyEmpty bind:save bind:toolState {peerConnection} />
+            <button on:click={save}><BxSave /></button>
+            <button
+                class={historyEmpty ? "text-gray-400 cursor-default" : ""}
+                on:click={undo}><BxUndo /></button
+            >
+        </div>
+        <div class="flex flex-row gap-8 p-2 items-center justify-end">
+            {#if $userStore}
+                <div class="text-gray-500">Logged in as {$userStore.email}</div>
+                <button class="text-blue-500 hover:underline" on:click={logout}
+                    >Log out</button
+                >
+            {:else}
+                <a href="./auth/login" class="text-blue-500 hover:underline"
+                    >Log in</a
+                >
+            {/if}
+            <abbr
+                class="flex items-center"
+                title={$userStore
+                    ? ""
+                    : "Must be logged in to use video feature"}
+            >
+                <button
+                    class="disabled:opacity-50"
+                    on:click={() => (showVideo = !showVideo)}
+                    disabled={!$userStore}
+                >
+                    {#if showVideo}
+                        <BxCollapse />
+                    {:else}
+                        <BxVideo />
+                    {/if}
+                </button>
+            </abbr>
         </div>
     </div>
-    <textarea
-        class="absolute outline-none resize-none bg-transparent"
-        style="line-height: 1"
-        bind:this={$textBoxInputStore}
-    ></textarea>
 
-    {#if showVideo}
-        <div class="absolute top-0 right-0" transition:fade={{ duration: 100 }}>
-            <VideoBox pc={peerConnection} />
+    <div class="relative grow">
+        <div
+            class="absolute top-0 left-0 flex flex-col h-full w-full bg-gray-100"
+        >
+            <div class="overflow-scroll">
+                <Canvas
+                    bind:undo
+                    bind:historyEmpty
+                    bind:save
+                    bind:toolState
+                    {peerConnection}
+                />
+            </div>
         </div>
-    {/if}
+        <textarea
+            class="absolute outline-none resize-none bg-transparent"
+            style="line-height: 1"
+            bind:this={$textBoxInputStore}
+        ></textarea>
+
+        {#if showVideo}
+            <div
+                class="absolute top-0 right-0"
+                transition:fade={{ duration: 100 }}
+            >
+                <VideoBox pc={peerConnection} />
+            </div>
+        {/if}
+    </div>
 </div>
 
 <!-- Just so other cursor types can be used -->

@@ -118,6 +118,7 @@
 
     interface PendingCall {
         hostEmail: string;
+        timeCreated: string;
     }
     let pendingCalls: PendingCall[] = [];
 
@@ -226,7 +227,7 @@
                         class="m-2 p-2 border-y hover:border-blue-500 w-full flex flex-row justify-between"
                         on:click={async () => peerEmail = await joinCall(pc, pendingCall.hostEmail)}
                     >
-                        <div>{pendingCall.hostEmail}</div>
+                        <div>{pendingCall.hostEmail} <span>{pendingCall.timeCreated}</span></div>
                         <div>Join</div>
                     </button>
                 {/each}

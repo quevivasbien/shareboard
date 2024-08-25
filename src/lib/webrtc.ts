@@ -1,4 +1,4 @@
-import { addDoc, collection, CollectionReference, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, CollectionReference, deleteDoc, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { get } from "svelte/store";
 import { userStore } from "./stores";
@@ -83,7 +83,7 @@ export async function startCall(pc: RTCPeerConnection, guestEmail: string) {
 
     // Update list of pending calls for guest
     const guestPendingCalls = collection(db, "rooms", guestEmail, "invitations");
-    await addDoc(guestPendingCalls, { hostEmail: user.email });
+    await addDoc(guestPendingCalls, { hostEmail: user.email, createdTime: room.createdTime });
 
     return guestEmail;
 }
