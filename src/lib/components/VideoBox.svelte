@@ -4,24 +4,22 @@
     import {
         BxCamera,
         BxCameraOff,
-        BxCheckCircle,
-        BxCopy,
         BxMicrophone,
         BxMicrophoneOff,
     } from "svelte-boxicons";
     import { db } from "$lib/firebase";
-    import { userStore } from "$lib/stores";
+    import { connectionStateStore, userStore } from "$lib/stores";
     import {
         collection,
         onSnapshot,
     } from "firebase/firestore";
 
-    export let pc: RTCPeerConnection;
+    export let pc: RTCPeerConnection;  // bound value
+    export let remoteStream: MediaStream;
+    export let peerEmail: string | null;  // bound value
 
     const CAMERA_WIDTH = 640;
     const CAMERA_HEIGHT = 480;
-
-    let peerEmail: string | null = null;
 
     let localVideo: HTMLVideoElement;
     let videoStream: MediaStream | null = null;
@@ -30,9 +28,6 @@
     let micEnabled = true;
 
     let remoteVideo: HTMLVideoElement;
-    let remoteStream = new MediaStream();
-
-    let connectionState = "disconnected";
 
     async function getVideoStream() {
         const videoStream = await navigator.mediaDevices.getUserMedia({
@@ -67,14 +62,12 @@
             getAudioStream();
         }
 
+        remoteVideo.srcObject = remoteStream;
+
         pc.ontrack = (event) => {
             for (const track of event.streams[0].getTracks()) {
                 remoteStream.addTrack(track);
             }
-            remoteVideo.srcObject = remoteStream;
-        };
-        pc.onconnectionstatechange = () => {
-            connectionState = pc.connectionState;
         };
     });
 
@@ -117,10 +110,19 @@
     let amHost = false;
 
     interface PendingCall {
+        invitationID: string;
         hostEmail: string;
-        timeCreated: string;
+        createdTime: string;
     }
     let pendingCalls: PendingCall[] = [];
+
+    function minutesSince(time: string) {
+        const now = new Date();
+        const created = new Date(time);
+        const diff = now.getTime() - created.getTime();
+        const minutes = Math.floor(diff / 1000 / 60);
+        return minutes < 1 ? "<1 m" : minutes > 60 ? ">1 hr" : minutes + " m";
+    }
 
     // Watch pending calls
     onMount(() => {
@@ -138,22 +140,36 @@
             console.log("Found", snapshot.size, "new pending calls");
             snapshot.docChanges().forEach((change) => {
                 if (change.type === "added") {
-                    const call = change.doc.data() as PendingCall;
-                    pendingCalls = [...pendingCalls, call];
+                    const call = change.doc.data();
+                    call.invitationID = change.doc.id;
+                    console.log("Found new pending call", call);
+                    pendingCalls = [...pendingCalls, call as PendingCall];
+                } else if (change.type === "removed") {
+                    pendingCalls = pendingCalls.filter(
+                        (call) => call.invitationID !== change.doc.id,
+                    );
                 }
             });
         });
     });
 
-    // let roomIDCopied = false;
-    // function copyRoomID() {
-    //     if (!roomID) {
-    //         console.error("Tried to copy roomID but it was null");
-    //         return;
-    //     }
-    //     navigator.clipboard.writeText(roomID);
-    //     roomIDCopied = true;
-    // }
+    let statusMessage: string;
+    $: {
+        const connectionState = $connectionStateStore;
+        if (connectionState === "connected") {
+            statusMessage = "Connected";
+        } else if (connectionState === "new") {
+            statusMessage = amHost ? "Waiting for guest to join..." : "Connecting...";
+        } else if (connectionState === "connecting") {
+            statusMessage = "Connecting...";
+        } else {
+            statusMessage = "Disconnected. Resetting...";
+            // TODO: Preserve canvas state when this happens
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        }
+    }
 </script>
 
 <div
@@ -168,7 +184,7 @@
             width={CAMERA_WIDTH}
             height={CAMERA_HEIGHT}
             class="bg-black absolute top-0 left-0"
-            style="display: ${connectionState === 'connected'
+            style="display: ${$connectionStateStore === 'connected'
                 ? 'block'
                 : 'none'}"
         />
@@ -176,10 +192,10 @@
         <video
             autoplay
             bind:this={localVideo}
-            width={connectionState === "connected"
+            width={$connectionStateStore === "connected"
                 ? CAMERA_WIDTH / 3
                 : CAMERA_WIDTH}
-            height={connectionState === "connected"
+            height={$connectionStateStore === "connected"
                 ? CAMERA_HEIGHT / 3
                 : CAMERA_HEIGHT}
             class="bg-black absolute top-0 right-0"
@@ -217,7 +233,7 @@
                 disabled={peerEmail !== null}>Create Room</button
             >
         </form>
-        {#if pendingCalls.length > 0}
+        {#if !amHost && pendingCalls.length > 0}
             <div class="p-2 w-full flex flex-col gap-2">
                 <div class="text-gray-700 font-bold text-center">
                     Pending Calls
@@ -225,28 +241,17 @@
                 {#each pendingCalls as pendingCall}
                     <button
                         class="m-2 p-2 border-y hover:border-blue-500 w-full flex flex-row justify-between"
-                        on:click={async () => peerEmail = await joinCall(pc, pendingCall.hostEmail)}
+                        on:click={async () => peerEmail = await joinCall(pc, pendingCall.hostEmail, pendingCall.invitationID)}
                     >
-                        <div>{pendingCall.hostEmail} <span>{pendingCall.timeCreated}</span></div>
+                        <div class="flex flex-row gap-2"><span>{pendingCall.hostEmail}</span><span class ="text-gray-500">{minutesSince(pendingCall.createdTime)} ago</span></div>
                         <div>Join</div>
                     </button>
                 {/each}
             </div>
         {/if}
-    {:else if amHost && connectionState === "disconnected"}
+    {:else}
         <div class="p-2 border rounded w-full flex flex-row justify-between">
-            <!-- <div>
-                Room ID is <button class="text-gray-700" on:click={copyRoomID}
-                    >{roomID}</button
-                >
-            </div>
-            <div class="flex flex-row gap-2">
-                <button on:click={copyRoomID}>
-                    <BxCopy />
-                </button>
-                {#if roomIDCopied}<BxCheckCircle />{/if}
-            </div> -->
-            Waiting for guest to join...
+            {statusMessage}
         </div>
     {/if}
 </div>

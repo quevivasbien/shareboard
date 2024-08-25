@@ -82,6 +82,7 @@
             event.channel.onopen = () => {
                 console.log("Channel opened");
                 dataChannelOpen = true;
+                // TODO: Share initial state
             };
             event.channel.onclose = () => {
                 console.log("Channel closed");

@@ -4,7 +4,7 @@
     import ToolSelectMenu from "$lib/components/ToolSelectMenu.svelte";
     import PencilOptionsMenu from "$lib/components/PencilOptionsMenu.svelte";
     import Canvas from "$lib/components/Canvas.svelte";
-    import { textBoxInputStore, userStore, type ToolState } from "$lib/stores";
+    import { connectionStateStore, textBoxInputStore, userStore, type ToolState } from "$lib/stores";
     import TextOptionsMenu from "$lib/components/TextOptionsMenu.svelte";
     import VideoBox from "$lib/components/VideoBox.svelte";
     import { fade } from "svelte/transition";
@@ -31,6 +31,8 @@
     }
 
     let peerConnection: RTCPeerConnection = getRTCPeerConnection();
+    let remoteStream = new MediaStream();
+    let peerEmail: string | null = null;
 </script>
 
 <div class="flex flex-col w-screen h-screen">
@@ -81,7 +83,7 @@
                     : "Must be logged in to use video feature"}
             >
                 <button
-                    class="disabled:opacity-50"
+                    class="disabled:opacity-50 relative"
                     on:click={() => (showVideo = !showVideo)}
                     disabled={!$userStore}
                 >
@@ -89,6 +91,9 @@
                         <BxCollapse />
                     {:else}
                         <BxVideo />
+                        {#if $connectionStateStore === "connected"}
+                            <div class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />
+                        {/if}
                     {/if}
                 </button>
             </abbr>
@@ -120,7 +125,7 @@
                 class="absolute top-0 right-0"
                 transition:fade={{ duration: 100 }}
             >
-                <VideoBox pc={peerConnection} />
+                <VideoBox pc={peerConnection} {remoteStream} bind:peerEmail />
             </div>
         {/if}
     </div>
