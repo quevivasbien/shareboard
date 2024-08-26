@@ -33,10 +33,6 @@ export class BoundingBox {
         return new BoundingBox(0, 0, 0, 0);
     }
 
-    static from(bounds: BoundingBox) {
-        return new BoundingBox(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
-    }
-
     static union(bounds: BoundingBox[]) {
         let x0 = Infinity;
         let y0 = Infinity;
@@ -49,6 +45,10 @@ export class BoundingBox {
             y1 = Math.max(y1, b.y1);
         }
         return new BoundingBox(x0, y0, x1, y1);
+    }
+
+    clone() {
+        return new BoundingBox(this.x0, this.y0, this.x1, this.y1);
     }
 
     containsPoint(point: { x: number; y: number }) {
@@ -98,7 +98,7 @@ export function getBoundsAfterResize(
     horizSource: string,
     vertSource: string,
 ) {
-    const bounds = BoundingBox.from(boundsBefore);
+    const bounds = boundsBefore.clone();
     if (horizSource === "left") {
         bounds.x0 = Math.min(bounds.x1 - 1, cursorPosition.x);
     } else if (horizSource === "right") {

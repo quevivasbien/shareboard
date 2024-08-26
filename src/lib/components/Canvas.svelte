@@ -2,7 +2,7 @@
     import * as Konva from "svelte-konva";
     import { type Stage } from "konva/lib/Stage";
 
-    import { textBoxInputStore, type ToolState } from "$lib/stores";
+    import { textBoxInputStore, userIsHostStore, type ToolState } from "$lib/stores";
     import Line from "./Line.svelte";
     import TextBox from "./TextBox.svelte";
     import SelectedElements from "./SelectedElements.svelte";
@@ -13,7 +13,7 @@
         SelectionData,
         TextBoxData,
     } from "$lib/canvasElements";
-    import { CanvasHistory } from "$lib/canvasState";
+    import { CanvasHistory, loadState, saveState } from "$lib/canvasState";
     import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
     import { onMount } from "svelte";
 
@@ -21,7 +21,9 @@
     export let toolState: ToolState;
     export let undo: () => void;
     export let historyEmpty: boolean;
-    export let save: () => void;
+    export let download: () => void;
+    export let save: () => Promise<void>;
+    export let load: () => Promise<void>;
 
     // Unbound values
     export let peerConnection: RTCPeerConnection;
@@ -49,8 +51,8 @@
     let currentLine: LineData | null = null;
     // A text box that is currently being edited
     let currentTextBox: TextBoxData | null = null;
-    // Whether to allow the currently edited text box to be resized
-    let allowResizeTextBox: boolean = false;
+    // If the text box currently being edited is not new, what its previous state was
+    let currentTextBoxPreviousState: TextBoxData | null = null;
     // A selection that is actively being created (being dragged out)
     let currentSelection: SelectionData | null = null;
     // Whether the mouse is currently hovering over a selection
@@ -82,6 +84,13 @@
             event.channel.onopen = () => {
                 console.log("Channel opened");
                 dataChannelOpen = true;
+                // Share initial state, if user is the host
+                if ($userIsHostStore) {
+                    sendMessage({
+                        type: "initialState",
+                        payload: elements.map((e) => e.toPlain()),
+                    });
+                }
             };
             event.channel.onclose = () => {
                 console.log("Channel closed");
@@ -98,15 +107,15 @@
     };
 
     function sendMessage(message: DataChannelMessage) {
-        console.log("Sending", message)
         if (!dataChannelSender || !dataChannelOpen) {
             return;
         }
+        console.log("Sending", message);
         dataChannelSender.send(JSON.stringify(message));
     }
 
     function receiveMessage(message: DataChannelMessage) {
-        console.log("Received", message)
+        console.log("Received", message);
         switch (message.type) {
             case "draw": {
                 const toDraw = message.payload.map((e: { type: string, fields: any }) => CanvasElementData.fromPlain(e));
@@ -152,6 +161,21 @@
                 });
                 break;
             }
+            case "update": {
+                const { updated } = message.payload;
+                const updatedElement = CanvasElementData.fromPlain(updated);
+                elements = elements.map((e) => {
+                    if (e.id === updatedElement.id) {
+                        return updatedElement;
+                    } else {
+                        return e;
+                    }
+                });
+                break;
+            }
+            case "initialState": {
+                elements = message.payload.map((e: { type: string, fields: any }) => CanvasElementData.fromPlain(e));
+            }
             default: {
                 console.error("Got unsupported message type:", message.type);
                 break;
@@ -166,12 +190,21 @@
         if (addToElements && $textBoxInputStore?.value) {
             currentTextBox.text = $textBoxInputStore.value;
             elements = [...elements, currentTextBox];
-            history.add("draw", currentTextBox);
-            history = history;
-            sendMessage({
-                type: "draw",
-                payload: [currentTextBox.toPlain()],
-            });
+            if (currentTextBoxPreviousState) {
+                history.add("update", { updated: currentTextBox, previous: currentTextBoxPreviousState });
+                history = history;
+                sendMessage({
+                    type: "update",
+                    payload: { updated: currentTextBox.toPlain(), previous: currentTextBoxPreviousState.toPlain() },
+                });
+            } else {
+                history.add("draw", currentTextBox);
+                history = history;
+                sendMessage({
+                    type: "draw",
+                    payload: [currentTextBox.toPlain()],
+                });
+            }
         }
         textBoxInputStore.update((t) => {
             if (t) {
@@ -352,6 +385,7 @@
                 if (idx !== -1) {
                     // If so, select that text box
                     const textBox = elements[idx] as TextBoxData;
+                    currentTextBoxPreviousState = textBox.clone();
                     if ($textBoxInputStore !== null) {
                         $textBoxInputStore.value = textBox.text;
                     }
@@ -361,11 +395,11 @@
                     textBox.mouseIsOver = false;  // Otherwise, the user won't be able to create new text boxes after selecting this one
                     currentTextBox = textBox;
                     elements = elements.slice(0, idx).concat(elements.slice(idx + 1));
-                    allowResizeTextBox = false;
                     $textBoxInputStore?.focus();
                 }
                 else {
                     // Otherwise, create a new text box
+                    currentTextBoxPreviousState = null;
                     currentTextBox = new TextBoxData(
                         "",
                         new BoundingBox(pos.x, pos.y, pos.x, pos.y),
@@ -373,7 +407,6 @@
                         toolState.fontSize,
                         toolState.fontFace,
                     );
-                    allowResizeTextBox = true;
                 }
                 break;
 
@@ -472,7 +505,7 @@
                 break;
 
             case "text":
-                if (!currentTextBox || !allowResizeTextBox) {
+                if (!currentTextBox || currentTextBoxPreviousState) {
                     return;
                 }
                 currentTextBox.bounds.x1 = pos.x;
@@ -511,7 +544,7 @@
             if (!currentTextBox) {
                 return;
             }
-            if (allowResizeTextBox) {
+            if (!currentTextBoxPreviousState) {
                 currentTextBox = currentTextBox.setMinimumSize();
             }
             $textBoxInputStore?.focus();
@@ -551,9 +584,11 @@
     undo = () => {
         resetSelections(false);
         const lastAction = history.pop();
-        if (lastAction) {
-            if (lastAction.type === "draw") {
-                // TODO: This needs to be reworked, since elements can be re-added out of order
+        if (!lastAction) {
+            return;
+        }
+        switch (lastAction.type) {
+            case "draw": {
                 let idxToRemove = -1;
                 for (let i = 0; i < elements.length; i++) {
                     if (elements[i].id === lastAction.payload.id) {
@@ -570,13 +605,17 @@
                     console.log("Missing element for undo draw. Trying next action...");
                     return undo();
                 }
-            } else if (lastAction.type === "erase") {
+                break;
+            }
+            case "erase": {
                 elements = [
                     ...elements,
                     ...(lastAction.payload as CanvasElementData[]),
                 ];
                 sendMessage({ type: "draw", payload: lastAction.payload.map((element: CanvasElementData) => element.toPlain()) });
-            } else if (lastAction.type === "move") {
+                break;
+            }
+            case "move": {
                 const { payload } = lastAction;
                 elements = elements.map((e: CanvasElementData) => {
                     if (payload.elements.includes(e)) {
@@ -593,7 +632,9 @@
                         dy: -payload.dy,
                     }
                 });
-            } else if (lastAction.type === "resize") {
+                break;
+            }
+            case "resize": {
                 const { payload } = lastAction;
                 elements = elements.map((e: CanvasElementData) => {
                     if (payload.elements.includes(e)) {
@@ -623,14 +664,34 @@
                         },
                     },
                 })
+                break;
             }
+            case "update": {
+                const { updated, previous } = lastAction.payload as { updated: CanvasElementData, previous: CanvasElementData };
+                elements = elements.map((e: CanvasElementData) => {
+                    if (previous.id === e.id) {
+                        return previous;
+                    }
+                    else {
+                        return e;
+                    }
+                });
+                sendMessage({
+                    type: "update",
+                    payload: { previous: updated.toPlain(), updated: previous.toPlain() }
+                });
+                break;
+            }
+            default:
+                console.error("Unknown undo action", lastAction);
+                break;
         }
         history = history;
     };
     $: historyEmpty = history.empty;
 
     let stage: Stage;
-    save = () => {
+    download = () => {
         // Save current canvas as an image
         const dataURL = stage.toDataURL();
         const a = document.createElement("a");
@@ -638,6 +699,17 @@
         a.download = "shareboard.png";
         a.click();
         a.remove();
+    };
+
+    save = async () => {
+        await saveState(elements);
+    };
+
+    load = async () => {
+        const newElements = await loadState();
+        if (newElements) {
+            elements = newElements;
+        }
     };
 
     let cursorType: string;
