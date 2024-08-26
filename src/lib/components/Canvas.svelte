@@ -13,7 +13,7 @@
         SelectionData,
         TextBoxData,
     } from "$lib/canvasElements";
-    import { CanvasHistory, loadState, saveState } from "$lib/canvasState";
+    import { CanvasHistory, loadState, saveState, type DataChannelMessage } from "$lib/canvasState";
     import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
     import { onMount } from "svelte";
 
@@ -88,7 +88,7 @@
                 if ($userIsHostStore) {
                     sendMessage({
                         type: "initialState",
-                        payload: elements.map((e) => e.toPlain()),
+                        payload: elements.concat(selectedElements).map((e) => e.toPlain()),
                     });
                 }
             };
@@ -100,11 +100,6 @@
 
         dataChannelSender = peerConnection.createDataChannel("canvas-data");
     });
-
-    interface DataChannelMessage {
-        type: string;
-        payload: any;
-    };
 
     function sendMessage(message: DataChannelMessage) {
         if (!dataChannelSender || !dataChannelOpen) {
@@ -118,24 +113,27 @@
         console.log("Received", message);
         switch (message.type) {
             case "draw": {
-                const toDraw = message.payload.map((e: { type: string, fields: any }) => CanvasElementData.fromPlain(e));
+                const toDraw = message.payload.map((e) => CanvasElementData.fromPlain(e));
                 elements = [...elements, ...toDraw];
                 break;
             }
             case "erase": {
                 const toErase = message.payload as string[];
                 elements = elements.filter((e) => !toErase.includes(e.id));
+                selectedElements = selectedElements.filter((e) => !toErase.includes(e.id));
                 break;
             }
             case "move": {
                 const { ids, dx, dy } = message.payload;
-                elements = elements.map((e) => {
+                const moveElem = (e: CanvasElementData) => {
                     if (ids.includes(e.id)) {
                         return e.move(dx, dy);
                     } else {
                         return e;
                     }
-                });
+                };
+                elements = elements.map(moveElem);
+                selectedElements = selectedElements.map(moveElem);
                 break;
             }
             case "resize": {
@@ -152,29 +150,33 @@
                     boundsAfter.x1,
                     boundsAfter.y1
                 );
-                elements = elements.map((e) => {
+                const resizeElem = (e: CanvasElementData) => {
                     if (ids.includes(e.id)) {
                         return e.scale(before, after);
                     } else {
                         return e;
                     }
-                });
+                };
+                elements = elements.map(resizeElem);
+                selectedElements = selectedElements.map(resizeElem);
                 break;
             }
             case "update": {
-                const { updated } = message.payload;
-                const updatedElement = CanvasElementData.fromPlain(updated);
-                elements = elements.map((e) => {
+                const updatedElement = CanvasElementData.fromPlain(message.payload);
+                const updateElem = (e: CanvasElementData) => {
                     if (e.id === updatedElement.id) {
                         return updatedElement;
                     } else {
                         return e;
                     }
-                });
+                };
+                elements = elements.map(updateElem);
+                selectedElements = selectedElements.map(updateElem);
                 break;
             }
             case "initialState": {
-                elements = message.payload.map((e: { type: string, fields: any }) => CanvasElementData.fromPlain(e));
+                elements = message.payload.map((e) => CanvasElementData.fromPlain(e));
+                selectedElements = [];
             }
             default: {
                 console.error("Got unsupported message type:", message.type);
@@ -191,14 +193,20 @@
             currentTextBox.text = $textBoxInputStore.value;
             elements = [...elements, currentTextBox];
             if (currentTextBoxPreviousState) {
-                history.add("update", { updated: currentTextBox, previous: currentTextBoxPreviousState });
+                history.add({
+                    type: "update",
+                    payload: currentTextBoxPreviousState,
+                });
                 history = history;
                 sendMessage({
                     type: "update",
-                    payload: { updated: currentTextBox.toPlain(), previous: currentTextBoxPreviousState.toPlain() },
+                    payload: currentTextBox.toPlain(),
                 });
             } else {
-                history.add("draw", currentTextBox);
+                history.add({
+                    type: "draw",
+                    payload: currentTextBox,
+                });
                 history = history;
                 sendMessage({
                     type: "draw",
@@ -250,10 +258,13 @@
         selectedElements = selectedElements.map((e) => {
             return e.move(dx, dy);
         });
-        history.add("move", {
-            elements: selectedElements,
-            dx,
-            dy,
+        history.add({
+            type: "move",
+            payload: {
+                elements: selectedElements,
+                dx,
+                dy,
+            }
         });
         history = history;
         sendMessage({
@@ -289,34 +300,27 @@
         selectedElements = selectedElements.map((e) => {
             return e.scale(boundsBefore, boundsAfter);
         });
-        history.add("resize", {
-            elements: selectedElements,
-            boundsBefore,
-            boundsAfter,
+        history.add({
+            type: "resize",
+            payload: {
+                elements: selectedElements,
+                boundsBefore,
+                boundsAfter,
+            }
         });
         history = history;
         sendMessage({
             type: "resize",
             payload: {
                 ids: selectedElements.map((e: CanvasElementData) => e.id),
-                boundsBefore: {
-                    x0: boundsBefore.x0,
-                    y0: boundsBefore.y0,
-                    x1: boundsBefore.x1,
-                    y1: boundsBefore.y1,
-                },
-                boundsAfter: {
-                    x0: boundsAfter.x0,
-                    y0: boundsAfter.y0,
-                    x1: boundsAfter.x1,
-                    y1: boundsAfter.y1,
-                },
+                boundsBefore: { ...boundsBefore },
+                boundsAfter: { ...boundsAfter },
             },
         })
     }
 
     function deleteSelections() {
-        history.add("erase", selectedElements);
+        history.add({ type: "erase", payload: selectedElements });
         history = history;
         sendMessage({
             type: "erase",
@@ -498,7 +502,7 @@
                     return true;
                 });
                 if (toErase.length > 0) {
-                    history.add("erase", toErase);
+                    history.add({ type: "erase", payload: toErase });
                     history = history;
                     sendMessage({ type: "erase", payload: toErase.map((element) => element.id) });
                 }
@@ -534,7 +538,7 @@
                 return;
             }
             elements = [...elements, currentLine];
-            history.add("draw", currentLine);
+            history.add({ type: "draw", payload: currentLine });
             history = history;
             sendMessage({ type: "draw", payload: [currentLine.toPlain()] });
             currentLine = null;
@@ -667,7 +671,7 @@
                 break;
             }
             case "update": {
-                const { updated, previous } = lastAction.payload as { updated: CanvasElementData, previous: CanvasElementData };
+                const previous = lastAction.payload;
                 elements = elements.map((e: CanvasElementData) => {
                     if (previous.id === e.id) {
                         return previous;
@@ -678,7 +682,7 @@
                 });
                 sendMessage({
                     type: "update",
-                    payload: { previous: updated.toPlain(), updated: previous.toPlain() }
+                    payload: previous.toPlain()
                 });
                 break;
             }
