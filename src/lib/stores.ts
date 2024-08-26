@@ -15,3 +15,5 @@ export const textBoxInputStore = writable<HTMLTextAreaElement | null>(null);
 export const userStore = writable<User | null>(null);
 
 export const connectionStateStore = writable<RTCPeerConnectionState>("new");
+
+export const userIsHostStore = writable(false);

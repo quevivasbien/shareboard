@@ -212,6 +212,18 @@ export class TextBoxData extends CanvasElementData {
             },
         };
     }
+
+    // Return a deep copy of the text box data
+    clone() {
+        return new TextBoxData(
+            this.text,
+            this.bounds.clone(),
+            this.color,
+            this.fontSize,
+            this.fontFace,
+            this.id
+        );
+    }
 }
 
 export class SelectionData {

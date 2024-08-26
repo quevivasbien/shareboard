@@ -8,7 +8,7 @@
         BxMicrophoneOff,
     } from "svelte-boxicons";
     import { db } from "$lib/firebase";
-    import { connectionStateStore, userStore } from "$lib/stores";
+    import { connectionStateStore, userIsHostStore, userStore } from "$lib/stores";
     import {
         collection,
         onSnapshot,
@@ -107,7 +107,6 @@
     $: setAudioStream(micEnabled);
 
     let guestEmail = "";
-    let amHost = false;
 
     interface PendingCall {
         invitationID: string;
@@ -159,17 +158,18 @@
         if (connectionState === "connected") {
             statusMessage = "Connected";
         } else if (connectionState === "new") {
-            statusMessage = amHost ? "Waiting for guest to join..." : "Connecting...";
+            statusMessage = $userIsHostStore ? "Waiting for guest to join..." : "Connecting...";
         } else if (connectionState === "connecting") {
             statusMessage = "Connecting...";
         } else {
             statusMessage = "Disconnected. Resetting...";
-            // TODO: Preserve canvas state when this happens
             setTimeout(() => {
                 location.reload();
             }, 2000);
         }
     }
+
+    // TODO: Cancel & reject pending calls; automatically cancel when disconnected
 </script>
 
 <div
@@ -216,7 +216,7 @@
         <form
             class="flex flex-row gap-2"
             on:submit|preventDefault={() => {
-                amHost = true;
+                $userIsHostStore = true;
                 startCall(pc, guestEmail).then((result) => (peerEmail = result));
             }}
         >
@@ -233,7 +233,7 @@
                 disabled={peerEmail !== null}>Create Room</button
             >
         </form>
-        {#if !amHost && pendingCalls.length > 0}
+        {#if !$userIsHostStore && pendingCalls.length > 0}
             <div class="p-2 w-full flex flex-col gap-2">
                 <div class="text-gray-700 font-bold text-center">
                     Pending Calls
@@ -243,7 +243,7 @@
                         class="m-2 p-2 border-y hover:border-blue-500 w-full flex flex-row justify-between"
                         on:click={async () => peerEmail = await joinCall(pc, pendingCall.hostEmail, pendingCall.invitationID)}
                     >
-                        <div class="flex flex-row gap-2"><span>{pendingCall.hostEmail}</span><span class ="text-gray-500">{minutesSince(pendingCall.createdTime)} ago</span></div>
+                        <div class="flex flex-row gap-2"><span>{pendingCall.hostEmail}</span><span class="text-gray-500">{minutesSince(pendingCall.createdTime)} ago</span></div>
                         <div>Join</div>
                     </button>
                 {/each}

@@ -4,10 +4,10 @@ import { userStore } from "./stores";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
-type actionType = "draw" | "erase" | "move" | "resize";
+type ActionType = "draw" | "erase" | "move" | "resize" | "update";
 
 interface CanvasAction {
-    type: actionType;
+    type: ActionType;
     payload: any;
 }
 
@@ -16,7 +16,7 @@ export class CanvasHistory {
     private actions: CanvasAction[] = [];
     empty: boolean = true;
 
-    add(type: actionType, payload: any) {
+    add(type: ActionType, payload: any) {
         this.actions.push({ type, payload });
         if (this.actions.length > this.memorySize) {
             this.actions.shift();
