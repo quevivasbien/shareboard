@@ -95,6 +95,8 @@
             event.channel.onclose = () => {
                 console.log("Channel closed");
                 dataChannelOpen = false;
+                // Save canvas state whenever we lose connection to peer
+                save();
             };
         }
 
@@ -177,9 +179,6 @@
             case "initialState": {
                 elements = message.payload.map((e) => CanvasElementData.fromPlain(e));
                 selectedElements = [];
-            }
-            default: {
-                console.error("Got unsupported message type:", message.type);
                 break;
             }
         }
@@ -706,7 +705,8 @@
     };
 
     save = async () => {
-        await saveState(elements);
+        console.log("Saving state to database...");
+        await saveState(elements.concat(selectedElements));
     };
 
     load = async () => {

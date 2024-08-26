@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { startCall, joinCall } from "$lib/webrtc";
+    import { startCall, joinCall, deleteInvitation } from "$lib/webrtc";
     import {
         BxCamera,
         BxCameraOff,
@@ -8,15 +8,18 @@
         BxMicrophoneOff,
     } from "svelte-boxicons";
     import { db } from "$lib/firebase";
-    import { connectionStateStore, userIsHostStore, userStore } from "$lib/stores";
     import {
-        collection,
-        onSnapshot,
-    } from "firebase/firestore";
+        connectionStateStore,
+        userIsHostStore,
+        userStore,
+    } from "$lib/stores";
+    import { collection, onSnapshot } from "firebase/firestore";
+    import { error } from "@sveltejs/kit";
+    import { slide } from "svelte/transition";
 
-    export let pc: RTCPeerConnection;  // bound value
+    export let pc: RTCPeerConnection; // bound value
     export let remoteStream: MediaStream;
-    export let peerEmail: string | null;  // bound value
+    export let peerEmail: string | null; // bound value
 
     const CAMERA_WIDTH = 640;
     const CAMERA_HEIGHT = 480;
@@ -152,13 +155,63 @@
         });
     });
 
+    let errorMessage: string | null = null;
+    $: if (errorMessage) {
+        setTimeout(() => {
+            errorMessage = null;
+        }, 3000);
+    }
+
+    let disableGuestEmailForm = false;
+    let invitationID: string | null = null;
+    async function start() {
+        $userIsHostStore = true;
+        disableGuestEmailForm = true;
+        const result = await startCall(pc, guestEmail);
+        if (!result) {
+            errorMessage =
+                "Failed to start call. The guest email you provided may be invalid.";
+            return;
+        }
+        invitationID = result;
+        peerEmail = guestEmail;
+        disableGuestEmailForm = false;
+    }
+
+    async function join(pendingCall: PendingCall) {
+        $userIsHostStore = false;
+        const hostEmail = await joinCall(
+            pc,
+            pendingCall.hostEmail,
+            pendingCall.invitationID,
+        );
+        if (!hostEmail) {
+            errorMessage = "Failed to join call. The host might have left.";
+            return;
+        }
+        peerEmail = hostEmail;
+    }
+
+    function cancelInvite() {
+        if (!$userStore?.email) {
+            console.error("User not logged in when canceling invite");
+            return;
+        }
+        if (!invitationID) {
+            console.error("No invitation ID to cancel");
+            return;
+        }
+        deleteInvitation($userStore.email, invitationID);
+        location.reload();
+    }
+
     let statusMessage: string;
     $: {
         const connectionState = $connectionStateStore;
         if (connectionState === "connected") {
             statusMessage = "Connected";
         } else if (connectionState === "new") {
-            statusMessage = $userIsHostStore ? "Waiting for guest to join..." : "Connecting...";
+            statusMessage = "Connecting"
         } else if (connectionState === "connecting") {
             statusMessage = "Connecting...";
         } else {
@@ -169,7 +222,8 @@
         }
     }
 
-    // TODO: Cancel & reject pending calls; automatically cancel when disconnected
+    // TODO: Add ability to reject pending call
+    // TODO: Add buttons for hanging up
 </script>
 
 <div
@@ -213,45 +267,60 @@
     </div>
 
     {#if peerEmail === null}
-        <form
-            class="flex flex-row gap-2"
-            on:submit|preventDefault={() => {
-                $userIsHostStore = true;
-                startCall(pc, guestEmail).then((result) => (peerEmail = result));
-            }}
-        >
+        <form class="flex flex-row gap-2" on:submit|preventDefault={start}>
             <input
                 type="text"
                 class="p-2 border rounded disabled:cursor-not-allowed disabled:opacity-50 w-full"
                 bind:value={guestEmail}
-                disabled={peerEmail !== null}
+                disabled={disableGuestEmailForm}
                 placeholder="Guest's Email"
             />
             <button
                 type="submit"
                 class="py-2 px-8 border-2 rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100 text-nowrap"
-                disabled={peerEmail !== null}>Create Room</button
+                disabled={disableGuestEmailForm}>Create Room</button
             >
         </form>
         {#if !$userIsHostStore && pendingCalls.length > 0}
-            <div class="p-2 w-full flex flex-col gap-2">
+            <div class="p-2 w-full flex flex-col gap-2" transition:slide>
                 <div class="text-gray-700 font-bold text-center">
                     Pending Calls
                 </div>
                 {#each pendingCalls as pendingCall}
                     <button
                         class="m-2 p-2 border-y hover:border-blue-500 w-full flex flex-row justify-between"
-                        on:click={async () => peerEmail = await joinCall(pc, pendingCall.hostEmail, pendingCall.invitationID)}
+                        on:click={() => join(pendingCall)}
+                        transition:slide
                     >
-                        <div class="flex flex-row gap-2"><span>{pendingCall.hostEmail}</span><span class="text-gray-500">{minutesSince(pendingCall.createdTime)} ago</span></div>
+                        <div class="flex flex-row gap-2">
+                            <span>{pendingCall.hostEmail}</span><span
+                                class="text-gray-500"
+                                >{minutesSince(pendingCall.createdTime)} ago</span
+                            >
+                        </div>
                         <div>Join</div>
                     </button>
                 {/each}
             </div>
         {/if}
     {:else}
-        <div class="p-2 border rounded w-full flex flex-row justify-between">
-            {statusMessage}
+        <div class="p-2 border rounded w-full flex flex-row items-center justify-between">
+            {#if $userIsHostStore && $connectionStateStore === "new"}
+                <div class="p-2">Waiting for guest to join...</div>
+                <button
+                    class="py-2 px-8 border-2 rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100 text-nowrap"
+                    on:click={cancelInvite}
+                >
+                    Cancel
+                </button>
+            {:else}
+                {statusMessage}
+            {/if}
+        </div>
+    {/if}
+    {#if errorMessage}
+        <div class="p-2 text-red-500" transition:slide>
+            {errorMessage}
         </div>
     {/if}
 </div>

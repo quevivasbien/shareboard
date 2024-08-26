@@ -29,6 +29,7 @@
         fontFace: "sans-serif",
     };
 
+    // TODO: When reloading, if video was on, keep it on
     let showVideo = false;
     $: if (!$userStore?.email) {
         showVideo = false;
