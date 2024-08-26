@@ -13,7 +13,7 @@
         SelectionData,
         TextBoxData,
     } from "$lib/canvasElements";
-    import { CanvasHistory } from "$lib/canvasState";
+    import { CanvasHistory, loadState, saveState } from "$lib/canvasState";
     import { BoundingBox, getBoundsAfterResize } from "$lib/geometry";
     import { onMount } from "svelte";
 
@@ -21,7 +21,9 @@
     export let toolState: ToolState;
     export let undo: () => void;
     export let historyEmpty: boolean;
-    export let save: () => void;
+    export let download: () => void;
+    export let save: () => Promise<void>;
+    export let load: () => Promise<void>;
 
     // Unbound values
     export let peerConnection: RTCPeerConnection;
@@ -631,7 +633,7 @@
     $: historyEmpty = history.empty;
 
     let stage: Stage;
-    save = () => {
+    download = () => {
         // Save current canvas as an image
         const dataURL = stage.toDataURL();
         const a = document.createElement("a");
@@ -639,6 +641,17 @@
         a.download = "shareboard.png";
         a.click();
         a.remove();
+    };
+
+    save = async () => {
+        await saveState(elements);
+    };
+
+    load = async () => {
+        const newElements = await loadState();
+        if (newElements) {
+            elements = newElements;
+        }
     };
 
     let cursorType: string;

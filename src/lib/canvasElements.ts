@@ -2,6 +2,11 @@ import { BoundingBox, linesIntersect, scalePoint } from "./geometry";
 import Line from "./components/Line.svelte";
 import TextBox from "./components/TextBox.svelte";
 
+export interface PlainCanvasElementData {
+    type: string;
+    fields: Record<string, any>;
+}
+
 export abstract class CanvasElementData {
     // A unique identifier
     readonly id: string;
@@ -33,10 +38,10 @@ export abstract class CanvasElementData {
     // Convert to serializable format. Result should contain two fields:
     // type: string (same as the class name)
     // fields: any (containing the relevant data for the type)
-    abstract toPlain(): { type: string; fields: any };
+    abstract toPlain(): PlainCanvasElementData;
 
     // Deserialize from JSON format
-    static fromPlain({ type, fields }: { type: string; fields: any }) {
+    static fromPlain({ type, fields }: PlainCanvasElementData) {
         switch (type) {
             case "LineData":
                 return new LineData(fields.points, fields.color, fields.width, fields.style, fields.id);
