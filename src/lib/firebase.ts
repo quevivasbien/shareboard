@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { createUserWithEmailAndPassword, getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { doc, getFirestore, setDoc } from "firebase/firestore";
 import { userStore } from "./stores";
 
 const firebaseConfig = {
@@ -23,7 +23,9 @@ onAuthStateChanged(auth, (user) => {
 
 export async function createUser(email: string, password: string) {
     try {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        // Also add an entry in the users collection of the db
+        await setDoc(doc(db, "users", email), { uid: credential.user.uid  });
         return null;
     }
     catch (error) {

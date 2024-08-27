@@ -2,6 +2,7 @@ import { addDoc, collection, CollectionReference, deleteDoc, doc, getDoc, getDoc
 import { db } from "./firebase";
 import { get } from "svelte/store";
 import { connectionStateStore, userIsHostStore, userStore } from "./stores";
+import * as Result from "./result";
 
 
 const SERVERS = {
@@ -52,23 +53,27 @@ async function deleteDocs(refs: CollectionReference | Query) {
 async function sendInvite(guestEmail: string, createdTime: string) {
     const user = get(userStore);
     if (!user || !user.email) {
-        console.error("Tried to send invite while not logged in");
-        return;
+        return Result.err("You must be logged in to send an invitation.");
     }
     const guestPendingCalls = collection(db, "rooms", guestEmail, "invitations");
     // If there are any previous invitations, delete them
     const q = query(guestPendingCalls, where("hostEmail", "==", user.email));
     await deleteDocs(q);
     const doc = await addDoc(guestPendingCalls, { hostEmail: user.email, createdTime });
-    return doc.id;
+    return Result.ok(doc.id);
 }
 
 export async function startCall(pc: RTCPeerConnection, guestEmail: string) {
     const user = get(userStore);
     if (!user || !user.email) {
-        console.error("Tried to start call while not logged in");
-        return null;
+        return Result.err("You must be logged in to start a call.");
     }
+    // Check that email belongs to a registered user first
+    const userRef = doc(db, "users", guestEmail);
+    if (!(await getDoc(userRef)).exists()) {
+        return Result.err(`The email ${guestEmail} is not associated with a registered user.`);
+    }
+
     const offerDescription = await pc.createOffer();
     await pc.setLocalDescription(offerDescription);
 
@@ -119,10 +124,12 @@ export async function startCall(pc: RTCPeerConnection, guestEmail: string) {
     // Update list of pending calls for guest
     const invitationID = await sendInvite(guestEmail, room.createdTime);
 
-    addEventListener("beforeunload", () => {
-        // Make sure the call is cancelled/deleted if the host leaves the page
-        deleteCall(guestEmail, invitationID);
-    });
+    if (invitationID.ok) {
+        addEventListener("beforeunload", () => {
+            // Make sure the call is cancelled/deleted if the host leaves the page
+            deleteCall(guestEmail, invitationID.value);
+        });
+    }
 
     return invitationID;
 }
@@ -130,8 +137,7 @@ export async function startCall(pc: RTCPeerConnection, guestEmail: string) {
 export async function joinCall(pc: RTCPeerConnection, hostEmail: string, invitationID: string) {
     const user = get(userStore);
     if (!user || !user.email) {
-        console.error("Tried to join call while not logged in");
-        return null;
+        return Result.err("You must be logged in to join a call.");
     }
     console.log(`Joining call with ID ${invitationID} from ${hostEmail}`);
     
@@ -142,10 +148,9 @@ export async function joinCall(pc: RTCPeerConnection, hostEmail: string, invitat
     const roomSnapshot = await getDoc(roomRef);
     const room = roomSnapshot.data();
     if (!room) {
-        console.log("Room doesn't exist");
         // remove invitation, since it's invalid
         deleteInvitation(user.email, invitationID);
-        return null;
+        return Result.err("Call not found. It might have been cancelled by the host.");
     }
     
     pc.onicecandidate = (event) => {
@@ -176,7 +181,7 @@ export async function joinCall(pc: RTCPeerConnection, hostEmail: string, invitat
     // Remove invitation
     deleteInvitation(user.email, invitationID);
     
-    return hostEmail;
+    return Result.ok(hostEmail);
 }
 
 export function deleteInvitation(guestEmail: string, invitationID: string) {

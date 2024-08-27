@@ -168,28 +168,27 @@
         $userIsHostStore = true;
         disableGuestEmailForm = true;
         const result = await startCall(pc, guestEmail);
-        if (!result) {
-            errorMessage =
-                "Failed to start call. The guest email you provided may be invalid.";
+        disableGuestEmailForm = false;
+        if (!result.ok) {
+            errorMessage = result.error;
             return;
         }
-        invitationID = result;
+        invitationID = result.value;
         peerEmail = guestEmail;
-        disableGuestEmailForm = false;
     }
 
     async function join(pendingCall: PendingCall) {
         $userIsHostStore = false;
-        const hostEmail = await joinCall(
+        const result = await joinCall(
             pc,
             pendingCall.hostEmail,
             pendingCall.invitationID,
         );
-        if (!hostEmail) {
-            errorMessage = "Failed to join call. The host might have left.";
+        if (!result.ok) {
+            errorMessage = result.error;
             return;
         }
-        peerEmail = hostEmail;
+        peerEmail = result.value;
     }
 
     function cancelInvite() {
