@@ -3,21 +3,45 @@ import { CanvasElementData, type PlainCanvasElementData } from "./canvasElements
 import { userStore } from "./stores";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
+import type { BoundingBox } from "./geometry";
 
-type ActionType = "draw" | "erase" | "move" | "resize" | "update";
-
-interface CanvasAction {
-    type: ActionType;
-    payload: any;
+type CanvasAction = {
+    type: "draw",
+    // Contains element to be drawn
+    payload: CanvasElementData
+} | {
+    type: "erase",
+    // Contains elements to be erased
+    payload: CanvasElementData[]
+} | {
+    type: "move",
+    // Contains elements to be moved, along with the offset
+    payload: {
+        elements: CanvasElementData[],
+        dx: number,
+        dy: number
+    }
+} | {
+    type: "resize",
+    // Contains elements to be resized, along with the the selection bounds before and after resizing
+    payload: {
+        elements: CanvasElementData[],
+        boundsBefore: BoundingBox,
+        boundsAfter: BoundingBox
+    }
+} | {
+    type: "update",
+    // Contains *previous state* of element to be updated
+    payload: CanvasElementData,
 }
 
 export class CanvasHistory {
-    memorySize = 30;
+    memorySize = 50;
     private actions: CanvasAction[] = [];
     empty: boolean = true;
 
-    add(type: ActionType, payload: any) {
-        this.actions.push({ type, payload });
+    add(action: CanvasAction) {
+        this.actions.push(action);
         if (this.actions.length > this.memorySize) {
             this.actions.shift();
         }
@@ -58,4 +82,38 @@ export async function loadState() {
         return null;
     }
     return data.elements.map((e: PlainCanvasElementData) => CanvasElementData.fromPlain(e)) as CanvasElementData[];
+}
+
+export type DataChannelMessage = {
+    type: "draw",
+    // Contains list of elements to be drawn
+    payload: PlainCanvasElementData[]
+} | {
+    type: "erase",
+    // Contains *ids* of elements to be erased
+    payload: string[]
+} | {
+    type: "move",
+    // Contains ids of elements to be moved, along with the offset
+    payload: {
+        ids: string[],
+        dx: number,
+        dy: number
+    }
+} | {
+    type: "resize",
+    // Contains ids of elements to be resized, along with the the selection bounds before and after resizing
+    payload: {
+        ids: string[],
+        boundsBefore: { x0: number, y0: number, x1: number, y1: number },
+        boundsAfter: { x0: number, y0: number, x1: number, y1: number }
+    }
+} | {
+    type: "update",
+    // Contains *new state* of element to be updated
+    payload: PlainCanvasElementData,
+} | {
+    type: "initialState",
+    // Contains list of all elements on host's canvas
+    payload: PlainCanvasElementData[],
 }

@@ -1,7 +1,8 @@
 import { addDoc, collection, CollectionReference, deleteDoc, doc, getDoc, getDocs, onSnapshot, Query, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "./firebase";
 import { get } from "svelte/store";
-import { connectionStateStore, userStore } from "./stores";
+import { connectionStateStore, userIsHostStore, userStore } from "./stores";
+import * as Result from "./result";
 
 
 const SERVERS = {
@@ -52,28 +53,34 @@ async function deleteDocs(refs: CollectionReference | Query) {
 async function sendInvite(guestEmail: string, createdTime: string) {
     const user = get(userStore);
     if (!user || !user.email) {
-        console.error("Tried to send invite while not logged in");
-        return;
+        return Result.err("You must be logged in to send an invitation.");
     }
     const guestPendingCalls = collection(db, "rooms", guestEmail, "invitations");
     // If there are any previous invitations, delete them
     const q = query(guestPendingCalls, where("hostEmail", "==", user.email));
     await deleteDocs(q);
-    await addDoc(guestPendingCalls, { hostEmail: user.email, createdTime });
+    const doc = await addDoc(guestPendingCalls, { hostEmail: user.email, createdTime });
+    return Result.ok(doc.id);
 }
 
 export async function startCall(pc: RTCPeerConnection, guestEmail: string) {
     const user = get(userStore);
     if (!user || !user.email) {
-        console.error("Tried to start call while not logged in");
-        return null;
+        return Result.err("You must be logged in to start a call.");
     }
+    // Check that email belongs to a registered user first
+    const userRef = doc(db, "users", guestEmail);
+    if (!(await getDoc(userRef)).exists()) {
+        return Result.err(`The email ${guestEmail} is not associated with a registered user.`);
+    }
+
     const offerDescription = await pc.createOffer();
     await pc.setLocalDescription(offerDescription);
 
     // Create db entry with information about offer
     const room = {
         createdTime: new Date().toISOString(),
+        bothPresent: false,
         offer: {
             type: offerDescription.type,
             sdp: offerDescription.sdp,
@@ -115,35 +122,42 @@ export async function startCall(pc: RTCPeerConnection, guestEmail: string) {
     });
 
     // Update list of pending calls for guest
-    await sendInvite(guestEmail, room.createdTime);
+    const invitationID = await sendInvite(guestEmail, room.createdTime);
 
-    return guestEmail;
+    if (invitationID.ok) {
+        addEventListener("beforeunload", () => {
+            // Make sure the call is cancelled/deleted if the host leaves the page
+            deleteCall(guestEmail, invitationID.value);
+        });
+    }
+
+    return invitationID;
 }
 
 export async function joinCall(pc: RTCPeerConnection, hostEmail: string, invitationID: string) {
     const user = get(userStore);
     if (!user || !user.email) {
-        console.error("Tried to join call while not logged in");
-        return null;
+        return Result.err("You must be logged in to join a call.");
     }
     console.log(`Joining call with ID ${invitationID} from ${hostEmail}`);
     
     const roomRef = doc(db, "rooms", hostEmail, "hosted", user.email);
     const offerCandidates = collection(roomRef, "offerCandidates");
     const answerCandidates = collection(roomRef, "answerCandidates");
-
+    
+    const roomSnapshot = await getDoc(roomRef);
+    const room = roomSnapshot.data();
+    if (!room) {
+        // remove invitation, since it's invalid
+        deleteInvitation(user.email, invitationID);
+        return Result.err("Call not found. It might have been cancelled by the host.");
+    }
+    
     pc.onicecandidate = (event) => {
         if (event.candidate) {
             addDoc(answerCandidates, event.candidate.toJSON());
         }
     };
-
-    const roomSnapshot = await getDoc(roomRef);
-    const room = roomSnapshot.data();
-    if (!room) {
-        console.log("Room doesn't exist");
-        return null;
-    }
     await pc.setRemoteDescription(new RTCSessionDescription(room.offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
@@ -152,6 +166,7 @@ export async function joinCall(pc: RTCPeerConnection, hostEmail: string, invitat
             type: answer.type,
             sdp: answer.sdp,
         },
+        bothPresent: true,
     });
 
     onSnapshot(offerCandidates, (snapshot) => {
@@ -164,10 +179,29 @@ export async function joinCall(pc: RTCPeerConnection, hostEmail: string, invitat
     });
 
     // Remove invitation
-    const pendingCallsCollection = collection(db, "rooms", user.email, "invitations");
-    await deleteDoc(doc(pendingCallsCollection, invitationID));
+    deleteInvitation(user.email, invitationID);
     
-    return hostEmail;
+    return Result.ok(hostEmail);
+}
+
+export function deleteInvitation(guestEmail: string, invitationID: string) {
+    const invitationRef = doc(db, "rooms", guestEmail, "invitations", invitationID);
+    return deleteDoc(invitationRef);
+}
+
+export function deleteCall(peerEmail: string, invitationID: string | null = null) {
+    const user = get(userStore);
+    const userIsHost = get(userIsHostStore);
+    if (!user || !user.email) {
+        console.error("Tried to delete call while not logged in");
+        return;
+    }
+    console.log(`Deleting call with ${peerEmail}`);
+    const roomRef = userIsHost ? doc(db, "rooms", user.email, "hosted", peerEmail) : doc(db, "rooms", peerEmail, "hosted", user.email);
+    deleteDoc(roomRef);
+    if (invitationID) {
+        deleteInvitation(userIsHost ? peerEmail : user.email, invitationID);
+    }
 }
 
 export function closeConnection(pc: RTCPeerConnection) {
