@@ -235,8 +235,10 @@
     }
 
     let viewportHeight = CAMERA_HEIGHT;
+    let viewportWidth = CAMERA_WIDTH;
     function setViewportHeight() {
-        viewportHeight = Math.max(localVideo.clientHeight, remoteVideo.clientHeight);
+        viewportWidth = window.innerWidth > 1280 ? window.innerWidth * 0.25 : Math.min(1280 * 0.25, window.innerWidth * 0.9);
+        viewportHeight = viewportWidth * 3 / 4;
     }
     onMount(() => setTimeout(setViewportHeight, 100));
     addEventListener("resize", setViewportHeight);
@@ -247,14 +249,15 @@
 <!-- TODO: Allow for video box to be resized -->
 <div
     class="flex flex-col gap-2 px-2 bg-white m-2 p-2 drop-shadow"
+    style="width: {viewportWidth}px"
 >
     <div class="relative" style="height: {viewportHeight}px">
         <!-- svelte-ignore a11y-media-has-caption -->
         <video
             autoplay
             bind:this={remoteVideo}
-            width={CAMERA_WIDTH}
-            height={CAMERA_HEIGHT}
+            width={viewportWidth}
+            height={viewportHeight}
             class="bg-black absolute top-0 left-0"
             style="display: ${$connectionStateStore === 'connected'
                 ? 'block'
@@ -265,11 +268,11 @@
             autoplay
             bind:this={localVideo}
             width={$connectionStateStore === "connected"
-                ? CAMERA_WIDTH / 3
-                : CAMERA_WIDTH}
+                ? viewportWidth / 3
+                : viewportWidth}
             height={$connectionStateStore === "connected"
-                ? CAMERA_HEIGHT / 3
-                : CAMERA_HEIGHT}
+                ? viewportHeight / 3
+                : viewportHeight}
             class="bg-black absolute top-0 right-0"
         />
     </div>

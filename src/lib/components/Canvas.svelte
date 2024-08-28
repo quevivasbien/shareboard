@@ -536,6 +536,11 @@
             if (!currentLine) {
                 return;
             }
+            // Case where line has only a single point, so it is still displayed
+            if (currentLine.points.length === 2) {
+                currentLine.points = [currentLine.points[0], currentLine.points[1], currentLine.points[0], currentLine.points[1]];
+            }
+            // Add line to elements
             elements = [...elements, currentLine];
             history.add({ type: "draw", payload: currentLine });
             history = history;
