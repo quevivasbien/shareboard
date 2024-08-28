@@ -14,12 +14,12 @@
         userStore,
     } from "$lib/stores";
     import { collection, onSnapshot } from "firebase/firestore";
-    import { error } from "@sveltejs/kit";
     import { slide } from "svelte/transition";
 
     export let pc: RTCPeerConnection; // bound value
     export let remoteStream: MediaStream;
     export let peerEmail: string | null; // bound value
+    export let saveCanvasState: () => Promise<void>;
 
     const CAMERA_WIDTH = 640;
     const CAMERA_HEIGHT = 480;
@@ -201,7 +201,10 @@
             return;
         }
         deleteInvitation($userStore.email, invitationID);
-        location.reload();
+        saveCanvasState().then(() => {
+            localStorage.setItem("autoLoad", "true");
+            location.reload();
+        });
     }
 
     let statusMessage: string;
@@ -215,16 +218,26 @@
             statusMessage = "Connecting...";
         } else {
             statusMessage = "Disconnected. Resetting...";
+            saveCanvasState();
             setTimeout(() => {
+                localStorage.setItem("autoLoad", "true");
                 location.reload();
             }, 2000);
         }
     }
 
+    function endCall() {
+        // TODO. Make this more smooth.
+        saveCanvasState().then(() => {
+            localStorage.setItem("autoLoad", "true");
+            location.reload();
+        });
+    }
+
     // TODO: Add ability to reject pending call
-    // TODO: Add buttons for hanging up
 </script>
 
+<!-- TODO: Allow for video box to be resized -->
 <div
     class="flex flex-col gap-2 px-2 bg-white m-2 p-2 drop-shadow"
     style="width: {CAMERA_WIDTH}px;"
@@ -303,7 +316,7 @@
             </div>
         {/if}
     {:else}
-        <div class="p-2 border rounded w-full flex flex-row items-center justify-between">
+        <div class="p-2 border-t w-full flex flex-row items-center justify-between">
             {#if $userIsHostStore && $connectionStateStore === "new"}
                 <div class="p-2">Waiting for guest to join...</div>
                 <button
@@ -313,7 +326,14 @@
                     Cancel
                 </button>
             {:else}
-                {statusMessage}
+                <div class="p-2">
+                    {statusMessage}
+                </div>
+                {#if statusMessage === "Connected"}
+                    <button class="py-2 px-8 border-2 rounded disabled:cursor-not-allowed disabled:opacity-50 bg-white hover:bg-gray-100 text-nowrap" on:click={endCall}>
+                        End Call
+                    </button>
+                {/if}
             {/if}
         </div>
     {/if}

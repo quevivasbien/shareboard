@@ -10,6 +10,7 @@
     import { fade, slide } from "svelte/transition";
     import { logout } from "$lib/firebase";
     import { getRTCPeerConnection } from "$lib/webrtc";
+    import { onMount } from "svelte";
 
     let undo: () => void;
     let historyEmpty: boolean;
@@ -29,11 +30,28 @@
         fontFace: "sans-serif",
     };
 
-    // TODO: When reloading, if video was on, keep it on
     let showVideo = false;
-    $: if (!$userStore?.email) {
-        showVideo = false;
+    // Determine whether to show video when page is first loaded & whenever userStore changes
+    onMount(() => {
+        userStore.subscribe((user) => {
+            if (!user) {
+                // Automatically hide video when user is not logged in
+                showVideo = false;
+                return;
+            }
+            // If user previously had video shown, show it
+            if (localStorage.getItem("showVideo") === "true") {
+                showVideo = true;
+            }
+        });
+    });
+    // Automatically set value of showVideo in local storage, only when user is logged in
+    function setShowVideo(value: boolean) {
+        if ($userStore) {
+            localStorage.setItem("showVideo", value ? "true" : "false");
+        }
     }
+    $: setShowVideo(showVideo);
 
     let peerConnection: RTCPeerConnection = getRTCPeerConnection();
     let remoteStream = new MediaStream();
@@ -47,12 +65,32 @@
         });
     }
 
-    $: if ($userStore) {
-        offeringLoad = true;
-    }
-
     const SAVE_INTERVAL = 5 * 60 * 1000;  // 5 minutes
     setInterval(saveCanvas, SAVE_INTERVAL);
+
+    // Determine whether to automatically load user's previous canvas state
+    onMount(() => {
+        // Wait for update from userStore, since user must be logged in for load() to work.
+        let unsubscribe: () => void;
+        unsubscribe = userStore.subscribe((user) => {
+            if (!user) {
+                return;
+            }
+            // Read config from local storage
+            const autoLoad = localStorage.getItem("autoLoad");
+            if (autoLoad === "true") {
+                // Load user's previous canvas state without asking
+                load();
+                // Reset value of autoLoad
+                localStorage.setItem("autoLoad", "false");
+            }
+            else {
+                // If user is logged in and autoLoad is not set to true, ask what to do
+                offeringLoad = true;
+            }
+            unsubscribe();
+        });
+    });
 </script>
 
 <div class="flex flex-col w-screen h-screen">
@@ -92,7 +130,7 @@
             <button on:click={download}><BxDownload /></button>
             {#if $userStore}
                 <div class="text-gray-500">Logged in as {$userStore.email}</div>
-                <button class="text-blue-500 hover:underline" on:click={logout}
+                <button class="text-blue-500 hover:underline" on:click={() => logout().then(() => location.reload())}
                     >Log out</button
                 >
             {:else}
@@ -151,7 +189,7 @@
                 class="absolute top-0 right-0"
                 transition:fade={{ duration: 100 }}
             >
-                <VideoBox pc={peerConnection} {remoteStream} bind:peerEmail />
+                <VideoBox pc={peerConnection} {remoteStream} bind:peerEmail saveCanvasState={save} />
             </div>
         {/if}
 

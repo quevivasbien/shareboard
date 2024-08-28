@@ -784,6 +784,7 @@
     }
 </script>
 
+<!-- TODO: Also response to touch events -->
 <Konva.Stage
     bind:handle={stage}
     class="cursor-{cursorType}"
