@@ -15,10 +15,10 @@
 </script>
 
 <div
-    class="flex flex-row gap-2 px-2 items-center gap-2 divide-x divide-solid"
+    class="flex flex-row gap-1 sm:gap-2 px-2 items-center divide-x divide-solid"
     transition:slide={{ axis: "x" }}
 >
-    <div class="flex flex-row items-center gap-2">
+    <div class="flex flex-row items-center gap-1 sm:gap-2">
         <button
             class="cursor-pointer"
             on:click={() => {
@@ -27,11 +27,11 @@
             }}
         >
             <BxFontSize
-                class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8"
+                class="p-1 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8"
             />
         </button>
         {#if showFontSizeSelector}
-            <label class="flex flex-row items-center gap-2">
+            <label class="flex flex-row items-center gap-1 sm:gap-2">
                 <input
                     type="range"
                     min="10"
@@ -44,7 +44,7 @@
         {/if}
         <input class="max-w-12 px-1" type="number" min="10" max="72" step="2" bind:value={fontSize} />
     </div>
-    <div class="flex flex-row items-center gap-2">
+    <div class="flex flex-row items-center gap-1 sm:gap-2">
         <button
             class="cursor-pointer"
             on:click={() => {
@@ -53,7 +53,7 @@
             }}
         >
             <BxFontFamily
-                class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8"
+                class="p-1 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8"
             />
         </button>
         {#if showFontFaceSelector}

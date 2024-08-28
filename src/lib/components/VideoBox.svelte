@@ -234,15 +234,21 @@
         });
     }
 
+    let viewportHeight = CAMERA_HEIGHT;
+    function setViewportHeight() {
+        viewportHeight = Math.max(localVideo.clientHeight, remoteVideo.clientHeight);
+    }
+    onMount(() => setTimeout(setViewportHeight, 100));
+    addEventListener("resize", setViewportHeight);
+
     // TODO: Add ability to reject pending call
 </script>
 
 <!-- TODO: Allow for video box to be resized -->
 <div
     class="flex flex-col gap-2 px-2 bg-white m-2 p-2 drop-shadow"
-    style="width: {CAMERA_WIDTH}px;"
 >
-    <div class="relative" style="height: {CAMERA_HEIGHT}px;">
+    <div class="relative" style="height: {viewportHeight}px">
         <!-- svelte-ignore a11y-media-has-caption -->
         <video
             autoplay

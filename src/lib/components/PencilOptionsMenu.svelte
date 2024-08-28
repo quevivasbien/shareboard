@@ -6,7 +6,7 @@
 </script>
 
 <div class="flex flex-row items-center divide-x divide-solid"  transition:slide={{axis: 'x'}}>
-    <div class="flex flex-row gap-2 px-2 items-center">
+    <div class="flex flex-row gap-1 sm:gap-2 px-2 items-center">
         <label class="cursor-pointer">
             <input
                 type="radio"
@@ -14,7 +14,7 @@
                 bind:group={lineWidth}
                 value={2}
             />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
+            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8">
                 <svg viewBox="0 0 24 24">
                     <line
                         x1="0"
@@ -34,7 +34,7 @@
                 bind:group={lineWidth}
                 value={3}
             />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
+            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8">
                 <svg viewBox="0 0 24 24">
                     <line
                         x1="0"
@@ -54,7 +54,7 @@
                 bind:group={lineWidth}
                 value={4}
             />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
+            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8">
                 <svg viewBox="0 0 24 24">
                     <line
                         x1="0"
@@ -68,7 +68,7 @@
             </div>
         </label>
     </div>
-    <div class="flex flex-row gap-2 px-2 items-center">
+    <div class="flex flex-row gap-1 sm:gap-2 px-2 items-center">
         <label class="cursor-pointer">
             <input
                 type="radio"
@@ -76,7 +76,7 @@
                 bind:group={lineStyle}
                 value="solid"
             />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
+            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8">
                 <svg viewBox="0 0 24 24">
                     <line
                         x1="0"
@@ -96,7 +96,7 @@
                 bind:group={lineStyle}
                 value="dash"
             />
-            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
+            <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8">
                 <svg viewBox="0 0 24 24">
                     <line
                         x1="0"

@@ -344,7 +344,7 @@
         }
     }
 
-    function handleMousedown(e: Konva.KonvaMouseEvent) {
+    function handleMousedown(e: Konva.KonvaMouseEvent | Konva.KonvaTouchEvent) {
         const event = e.detail;
         const pos = event.target.getStage()?.getPointerPosition();
         if (!pos) {
@@ -440,7 +440,7 @@
         }
     }
 
-    function handleMousemove(e: Konva.KonvaMouseEvent) {
+    function handleMousemove(e: Konva.KonvaMouseEvent | Konva.KonvaTouchEvent) {
         const event = e.detail;
         const pos = event.target.getStage()?.getPointerPosition();
         if (!pos) {
@@ -527,7 +527,7 @@
         }
     }
 
-    function handleMouseup(e: Konva.KonvaMouseEvent) {
+    function handleMouseup(e: Konva.KonvaMouseEvent | Konva.KonvaTouchEvent) {
         mouseIsDown = false;
         if (
             toolState.activeTool === "pencil" ||
@@ -784,14 +784,16 @@
     }
 </script>
 
-<!-- TODO: Also response to touch events -->
 <Konva.Stage
     bind:handle={stage}
     class="cursor-{cursorType}"
     config={{ width: BOARD_SIZE.width, height: BOARD_SIZE.height }}
     on:mousedown={handleMousedown}
+    on:touchstart={handleMousedown}
     on:mousemove={handleMousemove}
+    on:touchmove={handleMousemove}
     on:mouseup={handleMouseup}
+    on:touchend={handleMouseup}
 >
     <Konva.Layer>
         <Konva.Rect

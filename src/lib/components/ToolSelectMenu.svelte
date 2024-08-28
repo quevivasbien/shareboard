@@ -4,7 +4,7 @@
     export let activeTool: string;
 </script>
 
-<div class="flex flex-row gap-2 items-center">
+<div class="flex flex-row gap-1 sm:gap-2 items-center">
     <label class="cursor-pointer">
         <input
             type="radio"
@@ -12,7 +12,7 @@
             bind:group={activeTool}
             value="pencil"
         />
-        <BxPencil class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
+        <BxPencil class="p-1 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8" />
     </label>
     <label class="cursor-pointer">
         <input
@@ -21,7 +21,7 @@
             bind:group={activeTool}
             value="eraser"
         />
-        <BxEraser class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
+        <BxEraser class="p-1 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8" />
     </label>
     <label class="cursor-pointer">
         <input
@@ -30,7 +30,7 @@
             bind:group={activeTool}
             value="line"
         />
-        <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-8 h-8">
+        <div class="p-2 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8">
             <svg viewBox="0 0 24 24">
                 <line
                     x1="0"
@@ -50,7 +50,7 @@
             bind:group={activeTool}
             value="text"
         />
-        <BxText class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
+        <BxText class="p-1 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8" />
     </label>
     <label class="cursor-pointer">
         <input
@@ -59,6 +59,6 @@
             bind:group={activeTool}
             value="selection"
         />
-        <BxSelection class="p-1 rounded-lg peer-checked:bg-gray-400 w-8 h-8" />
+        <BxSelection class="p-1 rounded-lg peer-checked:bg-gray-400 w-6 h-6 sm:w-8 sm:h-8" />
     </label>
 </div>
