@@ -82,8 +82,7 @@
     // Determine whether to automatically load user's previous canvas state
     onMount(() => {
         // Wait for update from userStore, since user must be logged in for load() to work.
-        let unsubscribe: () => void;
-        unsubscribe = userStore.subscribe((user) => {
+        userStore.subscribe((user) => {
             if (!user) {
                 return;
             }
@@ -98,7 +97,6 @@
                 // If user is logged in and autoLoad is not set to true, ask what to do
                 offeringLoad = true;
             }
-            unsubscribe();
         });
     });
 </script>

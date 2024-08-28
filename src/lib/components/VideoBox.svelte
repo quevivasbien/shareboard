@@ -236,11 +236,30 @@
 
     let viewportHeight = CAMERA_HEIGHT;
     let viewportWidth = CAMERA_WIDTH;
+    let localVideoAspectRatio = 0.75;
+    let remoteVideoAspectRatio = 0.75;
+    onMount(() => {
+        localVideo.onplaying = () => {
+            if (!localVideo.videoHeight || !localVideo.videoWidth) {
+                return;
+            }
+            localVideoAspectRatio = (localVideo.videoHeight / localVideo.videoWidth) ?? (CAMERA_HEIGHT / CAMERA_WIDTH);
+            setViewportHeight();
+        };
+        remoteVideo.onplaying = () => {
+            if (!remoteVideo.videoHeight || !remoteVideo.videoWidth) {
+                return;
+            }
+            remoteVideoAspectRatio = (remoteVideo.videoHeight / remoteVideo.videoWidth) ?? (CAMERA_HEIGHT / CAMERA_WIDTH);
+            setViewportHeight();
+        };
+        setViewportHeight();
+    });
     function setViewportHeight() {
+        const aspectRatio = $connectionStateStore === "connected" ? remoteVideoAspectRatio : localVideoAspectRatio;
         viewportWidth = window.innerWidth > 1280 ? window.innerWidth * 0.25 : Math.min(1280 * 0.25, window.innerWidth * 0.9);
-        viewportHeight = viewportWidth * 3 / 4;
+        viewportHeight = viewportWidth * aspectRatio;
     }
-    onMount(() => setTimeout(setViewportHeight, 100));
     addEventListener("resize", setViewportHeight);
 
     // TODO: Add ability to reject pending call
