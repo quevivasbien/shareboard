@@ -22,6 +22,8 @@
     import { logout } from "$lib/firebase";
     import { getRTCPeerConnection } from "$lib/webrtc";
     import { onMount } from "svelte";
+    
+    export let data;  // from +page.server.ts
 
     let undo: () => void;
     let historyEmpty: boolean;
@@ -64,7 +66,7 @@
     }
     $: setShowVideo(showVideo);
 
-    let peerConnection: RTCPeerConnection = getRTCPeerConnection();
+    let peerConnection: RTCPeerConnection = getRTCPeerConnection(data.turnServers);
     let remoteStream = new MediaStream();
     let peerEmail: string | null = null;
 

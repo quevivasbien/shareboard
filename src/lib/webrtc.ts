@@ -5,20 +5,8 @@ import { connectionStateStore, userIsHostStore, userStore } from "./stores";
 import * as Result from "./result";
 
 
-const SERVERS = {
-    iceServers: [
-        {
-            urls: [
-                "stun:stun1.l.google.com:19302",
-                "stun:stun2.l.google.com:19302",
-            ],
-        },
-    ],
-    iceCandidatePoolSize: 10,
-};
-
-export function getRTCPeerConnection() {
-    let pc = new RTCPeerConnection(SERVERS);
+export function getRTCPeerConnection(servers: RTCConfiguration) {
+    let pc = new RTCPeerConnection(servers);
     pc.onnegotiationneeded = () => {
         console.log("Negotiation needed");
     }
